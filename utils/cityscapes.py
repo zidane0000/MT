@@ -1,5 +1,5 @@
-# Inherit from https://pytorch.org/vision/0.8/_modules/torchvision/datasets/cityscapes.html#Cityscapes
-
+# Inherit from https://pytorch.org/vision/0.8/_modules/torchvision/datasets/cityscapes.html#Cityscapes and modify for support Depth Estimation
+import argparse
 import json
 import os
 import cv2
@@ -9,7 +9,8 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
 from PIL import Image
 
-from torch.utils.data import Dataset, Dataloader
+from torch.utils.data import Dataset, DataLoader
+from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 
 class Cityscapes(Dataset):
     """`Cityscapes <http://www.cityscapes-dataset.com/>`_ Dataset.
@@ -28,35 +29,6 @@ class Cityscapes(Dataset):
             target and transforms it.
         transforms (callable, optional): A function/transform that takes input sample and its target as entry
             and returns a transformed version.
-
-    Examples:
-
-        Get semantic segmentation target
-
-        .. code-block:: python
-
-            dataset = Cityscapes('./data/cityscapes', split='train', mode='fine',
-                                 target_type='semantic')
-
-            img, smnt = dataset[0]
-
-        Get multiple targets
-
-        .. code-block:: python
-
-            dataset = Cityscapes('./data/cityscapes', split='train', mode='fine',
-                                 target_type=['instance', 'color', 'polygon'])
-
-            img, (inst, col, poly) = dataset[0]
-
-        Validate on the "coarse" set
-
-        .. code-block:: python
-
-            dataset = Cityscapes('./data/cityscapes', split='val', mode='coarse',
-                                 target_type='semantic')
-
-            img, smnt = dataset[0]
     """
 
     # Based on https://github.com/mcordts/cityscapesScripts
@@ -111,7 +83,9 @@ class Cityscapes(Dataset):
             target_transform: Optional[Callable] = None,
             transforms: Optional[Callable] = None,
     ) -> None:
-        super(Cityscapes, self).__init__(root, transforms, transform, target_transform)
+        super(Cityscapes, self).__init__()
+        self.root = root
+        self.transforms = transforms
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
@@ -177,14 +151,16 @@ class Cityscapes(Dataset):
             than one item. Otherwise target is a json object if target_type="polygon", else the image segmentation.
         """
 
-        image = Image.open(self.images[index]).convert('RGB')
+        # image = Image.open(self.images[index]).convert('RGB')
+        image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
 
         targets: Any = []
         for i, t in enumerate(self.target_type):
             if t == 'polygon':
                 target = self._load_json(self.targets[index][i])
             else:
-                target = Image.open(self.targets[index][i])
+                # target = Image.open(self.targets[index][i])
+                target = cv2.imread(self.targets[index][i])
 
             targets.append(target)
 
@@ -218,12 +194,30 @@ class Cityscapes(Dataset):
         else:
             return '{}_polygons.json'.format(mode)
 
+    @staticmethod
+    def collate_fn(batch):
+        print(batch)
 
-def Create_Cityscapes()
-    dataset = Cityscapes()
-    dataloader = Dataloader(dataset)
+
+def Create_Cityscapes(params, mode='train'):
+    batch_size = params.batch_size
+    workers = params.workers
+
+    dataset = Cityscapes(params.root, split=mode, mode='fine', target_type=['instance', 'semantic', 'color', 'polygon'])
+    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
+    
     return dataset, dataloader
 
 if __name__ == '__main__':
-    cityscapes = Create_Cityscapes()
-    print(cityscapes[0])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
+    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
+    params = parser.parse_args()
+    train_dataset, train_loader = Create_Cityscapes(params, mode='val')
+
+    for i, item in enumerate(train_loader):
+        img, (inst, smnt, col, poly) = item
+        print(type(img))
+        input()
+

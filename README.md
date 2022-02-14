@@ -7,7 +7,7 @@ Semantic segmentation + Depth Estimation
 ## Datasets
 Cityscapes
 
-## models
+## Models
 <details><summary> <b>Expand</b> </summary>
 
 ```

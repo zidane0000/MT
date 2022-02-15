@@ -3,11 +3,10 @@ import argparse
 import json
 import os
 import cv2
+import numpy as np
 from collections import namedtuple
 import zipfile
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
-
-from PIL import Image
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
@@ -21,7 +20,7 @@ class Cityscapes(Dataset):
         split (string, optional): The image split to use, ``train``, ``test`` or ``val`` if mode="fine"
             otherwise ``train``, ``train_extra`` or ``val``
         mode (string, optional): The quality mode to use, ``fine`` or ``coarse``
-        target_type (string or list, optional): Type of target to use, ``instance``, ``semantic``, ``polygon``
+        target_type (string or list, optional): Type of target to use, ``instance``, ``semantic``, ``disparity``
             or ``color``. Can also be a list to output a tuple with all specified target types.
         transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
@@ -107,7 +106,7 @@ class Cityscapes(Dataset):
         if not isinstance(target_type, list):
             self.target_type = [target_type]
         [verify_str_arg(value, "target_type",
-                        ("instance", "semantic", "polygon", "color"))
+                        ("instance", "semantic", "color", "disparity"))
          for value in self.target_type]
 
         if not os.path.isdir(self.images_dir) or not os.path.isdir(self.targets_dir):
@@ -136,7 +135,7 @@ class Cityscapes(Dataset):
                 target_types = []
                 for t in self.target_type:
                     target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                 self._get_target_suffix(self.mode, t))
+                                                 self._get_target_suffix(self.mode, t))                
                     target_types.append(os.path.join(target_dir, target_name))
 
                 self.images.append(os.path.join(img_dir, file_name))
@@ -148,19 +147,18 @@ class Cityscapes(Dataset):
             index (int): Index
         Returns:
             tuple: (image, target) where target is a tuple of all target types if target_type is a list with more
-            than one item. Otherwise target is a json object if target_type="polygon", else the image segmentation.
+            than one item. Target is the image segmentation.
         """
 
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
+        image = np.moveaxis(image, -1, 0)
 
         targets: Any = []
-        for i, t in enumerate(self.target_type):
-            if t == 'polygon':
-                target = self._load_json(self.targets[index][i])
-            else:
-                # target = Image.open(self.targets[index][i])
-                target = cv2.imread(self.targets[index][i])
+        for i, t in enumerate(self.target_type):            
+            # target = Image.open(self.targets[index][i])
+            target = cv2.imread(self.targets[index][i])
+            target = np.moveaxis(target, -1, 0)
 
             targets.append(target)
 
@@ -191,19 +189,15 @@ class Cityscapes(Dataset):
             return '{}_labelIds.png'.format(mode)
         elif target_type == 'color':
             return '{}_color.png'.format(mode)
-        else:
-            return '{}_polygons.json'.format(mode)
-
-    @staticmethod
-    def collate_fn(batch):
-        print(batch)
+        elif target_type == 'disparity':
+            return 'disparity.png'
 
 
 def Create_Cityscapes(params, mode='train'):
     batch_size = params.batch_size
     workers = params.workers
 
-    dataset = Cityscapes(params.root, split=mode, mode='fine', target_type=['instance', 'semantic', 'color', 'polygon'])
+    dataset = Cityscapes(params.root, split=mode, mode='fine', target_type=['semantic', 'disparity'])
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
     
     return dataset, dataloader
@@ -217,7 +211,9 @@ if __name__ == '__main__':
     train_dataset, train_loader = Create_Cityscapes(params, mode='val')
 
     for i, item in enumerate(train_loader):
-        img, (inst, smnt, col, poly) = item
-        print(type(img))
+        img, (smnt, depth) = item
+        print(img.shape)
+        print(smnt.shape)
+        print(depth.shape)
         input()
 

@@ -75,6 +75,8 @@ class Cityscapes(Dataset):
     def __init__(
             self,
             root: str,
+            input_height: int,
+            input_width: int,
             split: str = "train",
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
@@ -85,6 +87,7 @@ class Cityscapes(Dataset):
         super(Cityscapes, self).__init__()
         self.root = root
         self.transforms = transforms
+        self.height, self.width = input_height, input_width
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
@@ -152,14 +155,18 @@ class Cityscapes(Dataset):
 
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
+        image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         image = np.moveaxis(image, -1, 0)
 
         targets: Any = []
-        for i, t in enumerate(self.target_type):            
+        for i, t in enumerate(self.target_type):
             # target = Image.open(self.targets[index][i])
-            target = cv2.imread(self.targets[index][i])
-            target = np.moveaxis(target, -1, 0)
+            target = cv2.imread(self.targets[index][i], cv2.IMREAD_GRAYSCALE)
+            target = cv2.resize(target, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
 
+            if t == 'disparity':
+                target = np.expand_dims(target, axis=0) # (batch, h, w) => (batch, dims, h, w)
+            
             targets.append(target)
 
         target = tuple(targets) if len(targets) > 1 else targets[0]
@@ -196,17 +203,20 @@ class Cityscapes(Dataset):
 def Create_Cityscapes(params, mode='train'):
     batch_size = params.batch_size
     workers = params.workers
+    input_height, input_width = params.input_height, params.input_width
 
-    dataset = Cityscapes(params.root, split=mode, mode='fine', target_type=['semantic', 'disparity'])
+    dataset = Cityscapes(params.root, input_height=input_height, input_width=input_width, split=mode, mode='fine', target_type=['semantic', 'disparity'])
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
     
     return dataset, dataloader
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root', type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--root',           type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
+    parser.add_argument('--batch-size',     type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--input_height',   type=int, help='input height', default=480)
+    parser.add_argument('--input_width',    type=int, help='input width',  default=640)
     params = parser.parse_args()
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 

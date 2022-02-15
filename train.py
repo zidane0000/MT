@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from utils.cityscapes import Create_Cityscapes
 from utils.general import one_cycle
+from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
 def train(params):
@@ -33,6 +34,9 @@ def train(params):
     # Dataset, DataLoader
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 
+    # loss
+    compute_loss = ComputeLoss()
+
     for epoch in range(epochs):
         model.train()
 
@@ -42,10 +46,12 @@ def train(params):
         for i, item in pbar:
             img, (smnt, depth) = item
             img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+            smnt = smnt.to(device)
+            depth = depth.to(device)
 
             optimizer.zero_grad()
             output = model(img)
-            loss = compute_loss(output, (smnt, depth))
+            loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
             loss.backward()
             optimizer.step()
         
@@ -54,12 +60,14 @@ def train(params):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root', type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
-    parser.add_argument('--epochs', type=int, help='number of epochs', default=50)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
-    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--learning_rate', type=float, help='initial learning rate', default=1e-4)
-    parser.add_argument('--end_learning_rate', type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
+    parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
+    parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
+    parser.add_argument('--batch-size',         type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--input_height',       type=int,   help='input height', default=480)
+    parser.add_argument('--input_width',        type=int,   help='input width',  default=640)
+    parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)
+    parser.add_argument('--end_learning_rate',  type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
     parser.add_argument('--linear-learning-rate', action='store_true', help='linear Learning Rate or cosine curve')
     params = parser.parse_args()
 

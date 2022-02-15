@@ -13,22 +13,25 @@ class MTmodel(nn.Module):
         '''
         super(MTmodel, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=7, kernel_size=3),
-            nn.ReLU(),            
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=1),
+            nn.ReLU(),
         )
 
         self.decoders = []
         # semantic
+        self.num_classes = 19
         self.semantic_decoder = nn.Sequential(
-            nn.Conv2d(in_channels=7, out_channels=3, kernel_size=3),
+            nn.Conv2d(in_channels=32, out_channels=self.num_classes, kernel_size=1),
             nn.ReLU(),          
         )
         self.decoders.append(self.semantic_decoder)
 
         # depth
         self.depth_decoder = nn.Sequential(
-            nn.Conv2d(in_channels=7, out_channels=3, kernel_size=3),
-            nn.ReLU(),            
+            nn.Conv2d(in_channels=32, out_channels=1, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Sigmoid(),
         )
         self.decoders.append(self.depth_decoder)
 
@@ -36,7 +39,6 @@ class MTmodel(nn.Module):
         feature_map = self.encoder(x)
         
         res = []
-
         res.append(self.semantic_decoder(feature_map))
         res.append(self.depth_decoder(feature_map))
         

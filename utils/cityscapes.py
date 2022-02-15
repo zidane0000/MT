@@ -208,7 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
     parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
     params = parser.parse_args()
-    train_dataset, train_loader = Create_Cityscapes(params, mode='val')
+    train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 
     for i, item in enumerate(train_loader):
         img, (smnt, depth) = item

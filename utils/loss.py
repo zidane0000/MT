@@ -12,14 +12,11 @@ class silog_loss(nn.Module):
         super(silog_loss, self).__init__()
         self.variance_focus = variance_focus
 
-    def forward(self, depth_est, depth_gt):
+    def forward(self, predict_depth, target_depth):
         # https://github.com/dg-enlens/banet-depth-prediction/blob/master/loss.py
         # let's only compute the loss on non-null pixels from the ground-truth depth-map
-        print(depth_est.shape)
-        print(depth_gt.shape)
-        input()
-        non_zero_mask = (depth_est > 0) & (depth_gt > 0)
-        d = torch.log(depth_est[non_zero_mask]) - torch.log(depth_gt[non_zero_mask])
+        non_zero_mask = (predict_depth > 0) & (target_depth > 0)
+        d = torch.log(predict_depth[non_zero_mask]) - torch.log(target_depth[non_zero_mask])
         # scaling the range of loss improve convergence and final result, and 10.0 is constant
         constant = 10.0
         return torch.sqrt((d ** 2).mean() - self.variance_focus * (d.mean() ** 2)) * constant
@@ -38,10 +35,6 @@ class CriterionDSN(nn.Module):
             print("disabled the reduction.")
 
     def forward(self, preds, target):
-        '''
-        preds : (batch_size, num_classes, height, width)
-        target : (batch_size, height, width)
-        '''
         h, w = target.size(1), target.size(2)
 
         target = target.to(dtype=torch.long)
@@ -60,9 +53,10 @@ class ComputeLoss:
         (predict_smnt, predict_depth) = predicts
         (target_smnt, target_depth) = targets
 
-        smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
         depth_loss = self.depth_loss_function(predict_depth, target_depth)
+        depth_loss = torch.unsqueeze(depth_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+        
+        smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
+        smnt_loss = torch.unsqueeze(smnt_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
 
         return (smnt_loss + depth_loss), (smnt_loss, depth_loss)
-
-

@@ -2,9 +2,10 @@ import argparse
 import torch
 import torch.nn as nn
 import torchvision.models as models
-
 from torchsummary import summary
 
+from .decoder.ccnet import RCCAModule
+from .decoder.bts import encoder, bts
 
 class MTmodel(nn.Module):
     def __init__(self, params):
@@ -12,35 +13,27 @@ class MTmodel(nn.Module):
         params : dict
         '''
         super(MTmodel, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=1),
-            nn.ReLU(),
-        )
 
-        self.decoders = []
+        params.encoder = 'densenet161_bts'
+        params.max_depth = 80
+        self.encoder = encoder(params)
+
         # semantic
         self.num_classes = 19
-        self.semantic_decoder = nn.Sequential(
-            nn.Conv2d(in_channels=32, out_channels=self.num_classes, kernel_size=1),
-            nn.ReLU(),          
-        )
-        self.decoders.append(self.semantic_decoder)
+        self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
 
         # depth
-        self.depth_decoder = nn.Sequential(
-            nn.Conv2d(in_channels=32, out_channels=1, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.Sigmoid(),
-        )
-        self.decoders.append(self.depth_decoder)
+        bts_size = 512
+        self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
 
     def forward(self, x):
-        feature_map = self.encoder(x)
+        feature_maps = self.encoder(x) # five feature maps
         
         res = []
-        res.append(self.semantic_decoder(feature_map))
-        res.append(self.depth_decoder(feature_map))
+        res.append(self.semantic_decoder(feature_maps[-1])) # use the last
+
+        depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)
+        res.append(final_depth)
         
         return res
 

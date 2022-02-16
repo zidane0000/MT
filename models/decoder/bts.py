@@ -74,7 +74,7 @@ class upconv(nn.Module):
         self.ratio = ratio
         
     def forward(self, x):
-        up_x = torch_nn_func.interpolate(x, scale_factor=self.ratio, mode='nearest')
+        up_x = torch_nn_func.interpolate(x, scale_factor=self.ratio, recompute_scale_factor=False, mode='nearest')
         out = self.conv(up_x)
         out = self.elu(out)
         return out
@@ -129,7 +129,7 @@ class local_planar_guidance(nn.Module):
         self.v = torch.arange(int(self.upratio)).reshape([1, self.upratio, 1]).float()
         self.upratio = float(upratio)
 
-    def forward(self, plane_eq, focal):
+    def forward(self, plane_eq):
         plane_eq_expanded = torch.repeat_interleave(plane_eq, int(self.upratio), 2)
         plane_eq_expanded = torch.repeat_interleave(plane_eq_expanded, int(self.upratio), 3)
         n1 = plane_eq_expanded[:, 0, :, :]
@@ -193,7 +193,7 @@ class bts(nn.Module):
         self.get_depth  = torch.nn.Sequential(nn.Conv2d(num_features // 16, 1, 3, 1, 1, bias=False),
                                               nn.Sigmoid())
 
-    def forward(self, features, focal):
+    def forward(self, features):
         skip0, skip1, skip2, skip3 = features[0], features[1], features[2], features[3]
         dense_features = torch.nn.ReLU()(features[4])
         upconv5 = self.upconv5(dense_features) # H/16
@@ -224,9 +224,9 @@ class bts(nn.Module):
         plane_normal_8x8 = torch_nn_func.normalize(plane_normal_8x8, 2, 1)
         plane_dist_8x8 = reduc8x8[:, 3, :, :]
         plane_eq_8x8 = torch.cat([plane_normal_8x8, plane_dist_8x8.unsqueeze(1)], 1)
-        depth_8x8 = self.lpg8x8(plane_eq_8x8, focal)
+        depth_8x8 = self.lpg8x8(plane_eq_8x8)
         depth_8x8_scaled = depth_8x8.unsqueeze(1) / self.params.max_depth
-        depth_8x8_scaled_ds = torch_nn_func.interpolate(depth_8x8_scaled, scale_factor=0.25, mode='nearest')
+        depth_8x8_scaled_ds = torch_nn_func.interpolate(depth_8x8_scaled, scale_factor=0.25, recompute_scale_factor=False, mode='nearest')
         
         upconv3 = self.upconv3(daspp_feat) # H/4
         upconv3 = self.bn3(upconv3)
@@ -238,9 +238,9 @@ class bts(nn.Module):
         plane_normal_4x4 = torch_nn_func.normalize(plane_normal_4x4, 2, 1)
         plane_dist_4x4 = reduc4x4[:, 3, :, :]
         plane_eq_4x4 = torch.cat([plane_normal_4x4, plane_dist_4x4.unsqueeze(1)], 1)
-        depth_4x4 = self.lpg4x4(plane_eq_4x4, focal)
+        depth_4x4 = self.lpg4x4(plane_eq_4x4)
         depth_4x4_scaled = depth_4x4.unsqueeze(1) / self.params.max_depth
-        depth_4x4_scaled_ds = torch_nn_func.interpolate(depth_4x4_scaled, scale_factor=0.5, mode='nearest')
+        depth_4x4_scaled_ds = torch_nn_func.interpolate(depth_4x4_scaled, scale_factor=0.5, recompute_scale_factor=False, mode='nearest')
         
         upconv2 = self.upconv2(iconv3) # H/2
         upconv2 = self.bn2(upconv2)
@@ -252,7 +252,7 @@ class bts(nn.Module):
         plane_normal_2x2 = torch_nn_func.normalize(plane_normal_2x2, 2, 1)
         plane_dist_2x2 = reduc2x2[:, 3, :, :]
         plane_eq_2x2 = torch.cat([plane_normal_2x2, plane_dist_2x2.unsqueeze(1)], 1)
-        depth_2x2 = self.lpg2x2(plane_eq_2x2, focal)
+        depth_2x2 = self.lpg2x2(plane_eq_2x2)
         depth_2x2_scaled = depth_2x2.unsqueeze(1) / self.params.max_depth
         
         upconv1 = self.upconv1(iconv2)
@@ -260,8 +260,6 @@ class bts(nn.Module):
         concat1 = torch.cat([upconv1, reduc1x1, depth_2x2_scaled, depth_4x4_scaled, depth_8x8_scaled], dim=1)
         iconv1 = self.conv1(concat1)
         final_depth = self.params.max_depth * self.get_depth(iconv1)
-        if self.params.dataset == 'kitti':
-            final_depth = final_depth * focal.view(-1, 1, 1, 1).float() / 715.0873
         
         return depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth
 

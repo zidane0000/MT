@@ -10,6 +10,9 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 
+from .general import id2trainId
+
+
 class Cityscapes(Dataset):
     def __init__(
             self,
@@ -33,15 +36,7 @@ class Cityscapes(Dataset):
         self.target_type = target_type
         self.split = split
         self.images = []
-        self.targets = []
-
-        ignore_label = 255
-        self.id_to_trainid = {-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
-                              3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,
-                              7: 0, 8: 1, 9: ignore_label, 10: ignore_label, 11: 2, 12: 3, 13: 4,
-                              14: ignore_label, 15: ignore_label, 16: ignore_label, 17: 5,
-                              18: ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12, 26: 13, 27: 14,
-                              28: 15, 29: ignore_label, 30: ignore_label, 31: 16, 32: 17, 33: 18}
+        self.targets = []       
 
         verify_str_arg(mode, "mode", ("fine", "coarse"))
         if mode == "fine":
@@ -112,7 +107,7 @@ class Cityscapes(Dataset):
             target = cv2.resize(target, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
 
             if t == 'semantic':
-                target =self.id2trainId(target)
+                target = id2trainId(target)
 
             if t == 'disparity':
                 target = np.expand_dims(target, axis=0) # (batch, h, w) => (batch, dims, h, w)
@@ -125,19 +120,10 @@ class Cityscapes(Dataset):
             image, target = self.transforms(image, target)
 
         return image, target
-    
-    def id2trainId(self, label, reverse=False):
-        label_copy = label.copy()
-        if reverse:
-            for v, k in self.id_to_trainid.items():
-                label_copy[label == k] = v
-        else:
-            for k, v in self.id_to_trainid.items():
-                label_copy[label == k] = v
-        return label_copy
 
     def __len__(self) -> int:
         return len(self.images)
+        # return 50
 
     def extra_repr(self) -> str:
         lines = ["Split: {split}", "Mode: {mode}", "Type: {target_type}"]

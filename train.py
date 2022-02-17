@@ -13,24 +13,22 @@ from torch.optim import SGD, Adam, lr_scheduler
 from tqdm import tqdm
 
 from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path
+from utils.general import one_cycle, increment_path, select_device
 from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
 def train(params):
     epochs = params.epochs
-    if params.device != 'cpu' and torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    device = select_device(params.device)
 
     # Directories
-    save_dir = increment_path(Path(params.project) / params.name, mkdir=True)
+    save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
+    print("saving to " + str(save_dir))
 
     # Model
     print("begin to bulid up model...")
     model = MTmodel(params)
-    if str(device).find('cuda') > -1 and torch.cuda.device_count() > 1:
+    if device != 'cpu' and torch.cuda.device_count() > 1:
         print("use multi-gpu, device=" + params.device)
         device_ids = [int(i) for i in params.device.split(',')]
         model = torch.nn.DataParallel(model, device_ids = device_ids)

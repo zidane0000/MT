@@ -9,11 +9,7 @@ import torch.nn as nn
 from pathlib import Path
 
 
-def one_cycle(y1=0.0, y2=1.0, steps=100):
-    # lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf
-    return lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1
-
-
+# Inherit from CCNet
 def id2trainId(label, reverse=False):
     ignore_label = 255
     id_to_trainid={-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
@@ -56,13 +52,23 @@ def get_palette(num_classes):
     return palette
 
 
-def put_palette(label, num_classes, palette=None):
+def put_palette(label, num_classes, palette=None, path=None):
     from PIL import Image as PILImage
     if num_classes and palette is None:
         palette = get_palette(num_classes)
     output_im = PILImage.fromarray(label)
     output_im.putpalette(palette)
+    output_im = output_im.convert('RGB') # convert P(8位像素，使用調色板映射到任何其他模式) to RGB
+
+    if path:
+        output_im.save(path)
     return np.array(output_im)
+
+
+# Inherit from YOLO
+def one_cycle(y1=0.0, y2=1.0, steps=100):
+    # lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf
+    return lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1
 
 
 def increment_path(path, exist_ok=False, sep='-', mkdir=False):

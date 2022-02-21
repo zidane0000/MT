@@ -4,7 +4,7 @@ import torch.nn as nn
 import torchvision.models as models
 from torchsummary import summary
 
-from .decoder.ccnet import RCCAModule
+from .decoder.ccnet import CCNet, RCCAModule
 from .decoder.bts import encoder, bts
 
 class MTmodel(nn.Module):
@@ -20,7 +20,8 @@ class MTmodel(nn.Module):
 
         self.recurrence = 2 # For 2 loop in RRCAModule
         self.num_classes = 19
-        self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
+        self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=self.num_classes, recurrence=self.recurrence)
+        # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
 
         # depth
         bts_size = 512
@@ -44,4 +45,5 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = MTmodel(params).to(device)
-    summary(model, (3, 640, 420))
+    summary(model, (3, 768, 384))
+    

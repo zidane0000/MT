@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch.nn import Softmax
 import functools
 from inplace_abn import InPlaceABN, InPlaceABNSync
+# BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
+BatchNorm2d = functools.partial(InPlaceABN, activation='identity')
 
 def INF(B,H,W):
      return -torch.diag(torch.tensor(float("inf")).cuda().repeat(H),0).unsqueeze(0).repeat(B*W,1,1)
@@ -71,3 +73,75 @@ class RCCAModule(nn.Module):
 
         output = self.bottleneck(torch.cat([x, output], 1))
         return output
+
+
+class Bottleneck(nn.Module):
+    expansion = 4
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, fist_dilation=1, multi_grid=1):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               padding=dilation*multi_grid, dilation=dilation*multi_grid, bias=False)
+        self.bn2 = BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = BatchNorm2d(planes * 4)
+        self.relu = nn.ReLU(inplace=False)
+        self.relu_inplace = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.dilation = dilation
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out = out + residual      
+        out = self.relu_inplace(out)
+
+        return out
+
+
+class CCNet(nn.Module):
+    # part of CCNet
+    def __init__(self, inplanes=128, block=Bottleneck, layers=[3, 4, 23, 3], num_classes=19, recurrence=0):
+        super(CCNet, self).__init__()
+        self.inplanes = inplanes
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=4, multi_grid=(1,1,1))
+        self.head = RCCAModule(2048, 512, num_classes)
+        self.recurrence = recurrence
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                BatchNorm2d(planes * block.expansion,affine = True))
+
+        layers = []
+        generate_multi_grid = lambda index, grids: grids[index%len(grids)] if isinstance(grids, tuple) else 1
+        layers.append(block(self.inplanes, planes, stride,dilation=dilation, downsample=downsample, multi_grid=generate_multi_grid(0, multi_grid)))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes, dilation=dilation, multi_grid=generate_multi_grid(i, multi_grid)))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x, labels=None):
+        x = self.layer4(x)
+        x = self.head(x, self.recurrence)
+        return x

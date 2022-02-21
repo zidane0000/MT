@@ -22,7 +22,7 @@ class Cityscapes(Dataset):
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
             transform: Optional[Callable] = None,
-            random_flip: bool = False
+            random_flip: bool = False,
     ) -> None:
         super(Cityscapes, self).__init__()
         self.root = root
@@ -93,7 +93,6 @@ class Cityscapes(Dataset):
             tuple: (image, target) where target is a tuple of all target types if target_type is a list with more
             than one item. Target is the image segmentation.
         """
-
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
@@ -107,10 +106,8 @@ class Cityscapes(Dataset):
 
             if t == 'semantic':
                 target = id2trainId(target)
-
             if t == 'disparity':
-                target = np.expand_dims(target, axis=0) # (batch, h, w) => (batch, dims, h, w)
-            
+                target = np.expand_dims(target, axis=0) # (h, w) => (dims, h, w)
             targets.append(target)
 
         target = list(targets) if len(targets) > 1 else targets[0]
@@ -166,11 +163,15 @@ def Create_Cityscapes(params, mode='train'):
 
 
 def do_random_flip(image, target):
-    flip = np.random.choice(2) * 2 - 1
-    image = image[:, :, ::flip].copy()
+    up_down_flip = np.random.choice(2) * 2 - 1
+    left_right_flip = np.random.choice(2) * 2 - 1
+    image = image[:, ::left_right_flip, ::up_down_flip].copy()
 
     for i in range(len(target)):
-        target[i] = target[i][:, ::flip].copy()
+        if len(target[i].shape) == 2:
+            target[i] = target[i][::left_right_flip, ::up_down_flip].copy()
+        elif len(target[i].shape) == 3:
+            target[i] = target[i][:, ::left_right_flip, ::up_down_flip].copy()
     return image, target
 
 if __name__ == '__main__':
@@ -180,7 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',   type=int, help='input height', default=480)
     parser.add_argument('--input_width',    type=int, help='input width',  default=640)
-    parser.add_argument('--random_flip',    action='store_true', help='flip the image and target')
+    parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
     params = parser.parse_args()
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 

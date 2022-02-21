@@ -67,6 +67,9 @@ def val(params, save_dir=None, model=None, compute_loss=None):
             np_predict_depth = predict_depth[0].cpu().numpy().astype(np.float32).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
 
+            np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
+            cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
@@ -80,6 +83,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
+    parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     params = parser.parse_args()
 
     val(params)

@@ -2,10 +2,11 @@
 this repo try to build MT model by opensource code from github
 
 ## Tasks
-Semantic segmentation + Depth Estimation
+1. Semantic segmentation
+2. Depth Estimation
 
 ## Datasets
-Cityscapes
+1. Cityscapes
 
 ## Models
 <details><summary> <b>Expand</b> </summary>

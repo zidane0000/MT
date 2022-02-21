@@ -18,7 +18,7 @@ class MTmodel(nn.Module):
         params.max_depth = 80
         self.encoder = encoder(params)
 
-        # semantic
+        self.recurrence = 2 # For 2 loop in RRCAModule
         self.num_classes = 19
         self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
 
@@ -30,7 +30,7 @@ class MTmodel(nn.Module):
         feature_maps = self.encoder(x) # five feature maps
         
         res = []
-        res.append(self.semantic_decoder(feature_maps[-1])) # use the last
+        res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
 
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)
         res.append(final_depth)
@@ -44,5 +44,4 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = MTmodel(params).to(device)
-
     summary(model, (3, 640, 420))

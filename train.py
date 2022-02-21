@@ -71,7 +71,7 @@ def train(params):
             optimizer.step()
 
             # log
-            mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             pbar.set_description(('epoch : %4s  ' + 'mem : %4s  ' + '     semantic : %4.4g  ' + '     depth : %4.4g') % (
                     f'{epoch}/{epochs - 1}', mem, smnt_loss, depth_loss))        
         scheduler.step()
@@ -91,7 +91,7 @@ def train(params):
                 loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))            
 
             # log
-            mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             test_bar.set_description(('epoch : %4s  ' + 'mem : %4s  ' + 'test-semantic : %4.4g  ' + 'test-depth : %4.4g') % (
                     f'{epoch}/{epochs - 1}', mem, smnt_loss, depth_loss))
 
@@ -120,6 +120,7 @@ if __name__ == '__main__':
     parser.add_argument('--linear-learning-rate', action='store_true', help='linear Learning Rate or cosine curve')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
+    parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     params = parser.parse_args()
 
     train(params)

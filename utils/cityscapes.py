@@ -2,9 +2,8 @@ import argparse
 import json
 import os
 import cv2
+import random
 import numpy as np
-from collections import namedtuple
-import zipfile
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
 from torch.utils.data import Dataset, DataLoader
@@ -23,18 +22,18 @@ class Cityscapes(Dataset):
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
             transform: Optional[Callable] = None,
-            target_transform: Optional[Callable] = None,
-            transforms: Optional[Callable] = None,
+            random_flip: bool = False
     ) -> None:
         super(Cityscapes, self).__init__()
         self.root = root
-        self.transforms = transforms
+        self.transform = transform
         self.height, self.width = input_height, input_width
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
         self.target_type = target_type
         self.split = split
+        self.random_flip = random_flip
         self.images = []
         self.targets = []       
 
@@ -114,10 +113,14 @@ class Cityscapes(Dataset):
             
             targets.append(target)
 
-        target = tuple(targets) if len(targets) > 1 else targets[0]
+        target = list(targets) if len(targets) > 1 else targets[0]
 
-        if self.transforms is not None:
-            image, target = self.transforms(image, target)
+        if self.random_flip:
+            image, target = do_random_flip(image, target)
+
+        if self.transform is not None:
+            image = self.transform(image)
+            target = self.transform(target)
 
         return image, target
 
@@ -150,10 +153,25 @@ def Create_Cityscapes(params, mode='train'):
     workers = params.workers
     input_height, input_width = params.input_height, params.input_width
 
-    dataset = Cityscapes(params.root, input_height=input_height, input_width=input_width, split=mode, mode='fine', target_type=['semantic', 'disparity'])
+    dataset = Cityscapes(params.root, 
+                        input_height=input_height, 
+                        input_width=input_width, 
+                        split=mode,
+                        mode='fine',
+                        target_type=['semantic', 'disparity'],
+                        random_flip=params.random_flip)
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
     
     return dataset, dataloader
+
+
+def do_random_flip(image, target):
+    flip = np.random.choice(2) * 2 - 1
+    image = image[:, :, ::flip].copy()
+
+    for i in range(len(target)):
+        target[i] = target[i][:, ::flip].copy()
+    return image, target
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -162,6 +180,7 @@ if __name__ == '__main__':
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',   type=int, help='input height', default=480)
     parser.add_argument('--input_width',    type=int, help='input width',  default=640)
+    parser.add_argument('--random_flip',    action='store_true', help='flip the image and target')
     params = parser.parse_args()
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 

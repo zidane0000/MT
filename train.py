@@ -121,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
+    parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
     params = parser.parse_args()
 
     train(params)

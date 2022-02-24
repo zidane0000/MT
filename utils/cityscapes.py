@@ -23,6 +23,7 @@ class Cityscapes(Dataset):
             target_type: Union[List[str], str] = "instance",
             transform: Optional[Callable] = None,
             random_flip: bool = False,
+            random_crop: bool = False,
     ) -> None:
         super(Cityscapes, self).__init__()
         self.root = root
@@ -34,6 +35,7 @@ class Cityscapes(Dataset):
         self.target_type = target_type
         self.split = split
         self.random_flip = random_flip
+        self.random_crop = random_crop
         self.images = []
         self.targets = []       
 
@@ -95,22 +97,20 @@ class Cityscapes(Dataset):
         """
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
-        image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        image = np.moveaxis(image, -1, 0)
 
         targets: Any = []
         for i, t in enumerate(self.target_type):
             # target = Image.open(self.targets[index][i])
             target = cv2.imread(self.targets[index][i], cv2.IMREAD_GRAYSCALE)
-            target = cv2.resize(target, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
 
             if t == 'semantic':
                 target = id2trainId(target)
-            if t == 'disparity':
-                target = np.expand_dims(target, axis=0) # (h, w) => (dims, h, w)
             targets.append(target)
 
         target = list(targets) if len(targets) > 1 else targets[0]
+
+        if self.random_crop:
+            image, target = do_random_crop(image, target, self.width, self.height)
 
         if self.random_flip:
             image, target = do_random_flip(image, target)
@@ -118,7 +118,14 @@ class Cityscapes(Dataset):
         if self.transform is not None:
             image = self.transform(image)
             target = self.transform(target)
+        
+        # (w, h, channel) -> (channel, w, h) and reszie if no random crop
+        image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+        image = np.moveaxis(image, -1, 0)
 
+        for i in range(len(target)):
+            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        
         return image, target
 
     def __len__(self) -> int:
@@ -156,7 +163,8 @@ def Create_Cityscapes(params, mode='train'):
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity'],
-                        random_flip=params.random_flip)
+                        random_flip=params.random_flip,
+                        random_crop=params.random_crop)
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
     
     return dataset, dataloader
@@ -165,23 +173,33 @@ def Create_Cityscapes(params, mode='train'):
 def do_random_flip(image, target):
     up_down_flip = np.random.choice(2) * 2 - 1
     left_right_flip = np.random.choice(2) * 2 - 1
-    image = image[:, ::left_right_flip, ::up_down_flip].copy()
+    image = image[::left_right_flip, ::up_down_flip].copy()
 
     for i in range(len(target)):
-        if len(target[i].shape) == 2:
             target[i] = target[i][::left_right_flip, ::up_down_flip].copy()
-        elif len(target[i].shape) == 3:
-            target[i] = target[i][:, ::left_right_flip, ::up_down_flip].copy()
     return image, target
+
+
+def do_random_crop(image, target, input_width, input_height):
+    img_h, img_w, channel = image.shape
+    h_off = random.randint(0, img_h - input_height)
+    w_off = random.randint(0, img_w - input_width)
+    image = image[h_off:h_off+input_height, w_off:w_off+input_width, :]
+
+    for i in range(len(target)):
+        target[i] = target[i][h_off:h_off+input_height, w_off:w_off+input_width]
+    return image, target
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root',           type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
     parser.add_argument('--batch-size',     type=int, default=16, help='total batch size for all GPUs')
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--input_height',   type=int, help='input height', default=480)
+    parser.add_argument('--input_height',   type=int, help='input height', default=320)
     parser.add_argument('--input_width',    type=int, help='input width',  default=640)
     parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
+    parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
     params = parser.parse_args()
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 
@@ -191,4 +209,3 @@ if __name__ == '__main__':
         print(smnt.shape)
         print(depth.shape)
         input()
-

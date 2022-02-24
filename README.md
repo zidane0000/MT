@@ -35,7 +35,12 @@ Laugh u
 
 ## Train
 ```
-python train.py --device 0,1 --name Add_CCNet --epochs 100 --input_height 384 --input_width 768 --batch-size 4 --random-flip
+python train.py --device 0,1 --name ${your name} --epochs 100 --input_height 384 --input_width 768 --batch-size 4 --random-flip --random-crop
+```
+
+## Val
+```
+python3 val.py --device 0,1 --weight ${your weight} --plot --input_height 1024 --input_width 2048 --batch-size 2
 ```
 
 ## Licenses

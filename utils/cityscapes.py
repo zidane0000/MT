@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 
-from .general import id2trainId
+from .general import id2trainId, put_palette
 
 
 class Cityscapes(Dataset):
@@ -125,6 +125,13 @@ class Cityscapes(Dataset):
 
         for i in range(len(target)):
             target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        
+        # cv2.imshow('image',image.transpose(1,2,0))
+        # np_predict_smnt = id2trainId(target[0], reverse=True)
+        # np_predict_smnt = put_palette(np_predict_smnt, num_classes=255)
+        # cv2.imshow('smnt', np_predict_smnt)
+        # cv2.imshow('depth', target[1])
+        # cv2.waitKey()
         
         return image, target
 

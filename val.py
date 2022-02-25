@@ -11,6 +11,79 @@ from utils.loss import ComputeLoss
 from utils.general import increment_path, select_device, id2trainId, put_palette
 from utils.cityscapes import Create_Cityscapes
 
+
+def compute_ccnet_eval(predicts, ground_truths, class_num=19):
+    def get_confusion_matrix(pred_label, gt_label, class_num):
+        """
+        Calcute the confusion matrix by given label and pred
+        :param gt_label: the ground truth label
+        :param pred_label: the pred label
+        :param class_num: the numnber of class
+        :return: the confusion matrix
+        """
+        index = (gt_label * class_num + pred_label).astype('int32')
+        label_count = np.bincount(index)
+        confusion_matrix = np.zeros((class_num, class_num))
+        for i_label in range(class_num):
+            for i_pred_label in range(class_num):
+                cur_index = i_label * class_num + i_pred_label
+                if cur_index < len(label_count):
+                    confusion_matrix[i_label, i_pred_label] = label_count[cur_index]
+        return confusion_matrix
+    
+    confusion_matrix = np.zeros((class_num, class_num))
+    for i in range(len(predicts)):
+        ignore_index = ground_truths[i] != 255
+        predict_mask = predicts[i][ignore_index]
+        ground_truth_maks = ground_truths[i][ignore_index]
+        confusion_matrix += get_confusion_matrix(predict_mask, ground_truth_maks, class_num)
+
+    # confusion_matrix = confusion_matrix.mean()
+    pos = confusion_matrix.sum(1)
+    res = confusion_matrix.sum(0)
+    tp = np.diag(confusion_matrix)
+
+    IU_array = (tp / np.maximum(1.0, pos + res - tp))
+    mean_IU = IU_array.mean()
+    return mean_IU, IU_array
+
+
+def compute_bts_eval(predicts, ground_truths, min_depth_eval, max_depth_eval):
+    silog, log10, rmse, rmse_log, abs_rel, sq_rel, d1, d2, d3 = (np.zeros(len(predicts), np.float32) for i in range(9))
+
+    for i in range(len(predicts)):
+        predicts[i][predicts[i] < min_depth_eval] = min_depth_eval
+        predicts[i][predicts[i] > max_depth_eval] = max_depth_eval
+        predicts[i][np.isinf(predicts[i])] = max_depth_eval
+        predicts[i][np.isnan(predicts[i])] = min_depth_eval
+
+        valid_mask = np.logical_and(ground_truths[i] > min_depth_eval, ground_truths[i] < max_depth_eval)
+        predict = predicts[i][valid_mask]        
+        ground_truth = ground_truths[i][valid_mask]
+
+        thresh = np.maximum((ground_truth / predict), (predict / ground_truth))
+        d1[i] = (thresh < 1.25).mean()
+        d2[i] = (thresh < 1.25 ** 2).mean()
+        d3[i] = (thresh < 1.25 ** 3).mean()
+        
+        tmp = (ground_truth - predict) ** 2
+        rmse[i] = np.sqrt(tmp.mean())
+        
+        tmp = (np.log(ground_truth) - np.log(predict)) ** 2
+        rmse_log[i] = np.sqrt(tmp.mean())
+        
+        abs_rel[i] = np.mean(np.abs(ground_truth - predict) / ground_truth)
+        sq_rel[i] = np.mean(((ground_truth - predict) ** 2) / ground_truth)
+        
+        err = np.log(predict) - np.log(ground_truth)
+        silog[i] = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+        
+        err = np.abs(np.log10(predict) - np.log10(ground_truth))
+        log10[i] = np.mean(err)
+    
+    return silog.mean(), abs_rel.mean(), log10.mean(), rmse.mean(), sq_rel.mean(), rmse_log.mean(), d1.mean(), d2.mean(), d3.mean()
+
+
 def val(params, save_dir=None, model=None, compute_loss=None):
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
@@ -37,6 +110,12 @@ def val(params, save_dir=None, model=None, compute_loss=None):
 
     val_bar = enumerate(val_loader)
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+    
+    # val result
+    smnt_mean_iou_val = 0
+    smnt_iou_array_val = np.zeros((19,19))
+    depth_val = np.zeros(9)
+
     for i, item in val_bar:
         img, (smnt, depth) = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
@@ -47,28 +126,48 @@ def val(params, save_dir=None, model=None, compute_loss=None):
             output = model(img)
 
         if compute_loss:
-            loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))            
-
-            # log
+            loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             val_bar.set_description(('mem : %4s  ' + 'val-semantic : %4.4g  ' + 'val-depth : %4.4g') % (
                     mem, smnt_loss, depth_loss))
+        
+        (predict_smnt, predict_depth) = output
+        # upsample to origin size
+        interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
+        predict_smnt = interp(predict_smnt)
+
+        np_predict_smnt = predict_smnt.cpu().numpy()
+        np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
+        np_gt_smnt= smnt.cpu().numpy()
+        miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt)
+        smnt_mean_iou_val += miou
+        smnt_iou_array_val += iou_array
+
+        np_predict_depth = predict_depth.cpu().numpy().squeeze().astype(np.float32)
+        np_gt_depth = depth.cpu().numpy().astype(np.float32)
+        depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth_eval, params.max_depth_eval))
                 
-        if params.plot:
-            (predict_smnt, predict_depth) = output
-            interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
-            predict_smnt = interp(predict_smnt)
-            np_predict_smnt = predict_smnt.cpu().numpy().transpose(0,2,3,1)
-            np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=3), dtype=np.uint8)
+        if params.plot:            
             np_predict_smnt = np_predict_smnt[0]
             np_predict_smnt = id2trainId(np_predict_smnt, reverse=True)
             np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
 
-            np_predict_depth = predict_depth[0].cpu().numpy().astype(np.float32).transpose(1,2,0)
+            np_predict_depth = np_predict_depth[0].transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
 
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
+    
+    smnt_mean_iou_val /= len(val_bar)
+    smnt_iou_array_val /= len(val_bar)
+    depth_val /= len(val_bar)
+
+    print('mean-IOU : %4.4f  ' % (smnt_mean_iou_val))
+    depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
+    for i in range(len(depth_val_str)):
+        print('%10s : %7.3f' % (depth_val_str[i], depth_val[i]))
+
+    return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -78,12 +177,15 @@ if __name__ == '__main__':
     parser.add_argument('--weight',             type=str, default=None, help='model.pt path')
     parser.add_argument('--batch-size',         type=int, default=8, help='total batch size for all GPUs')
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
-    parser.add_argument('--input_height',       type=int,   help='input height', default=256)
-    parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
+    parser.add_argument('--input_height',       type=int, default=256, help='input height')
+    parser.add_argument('--input_width',        type=int, default=512, help='input width')
+    parser.add_argument('--min_depth_eval',     type=float, default=1e-3, help='minimum depth for evaluation')
+    parser.add_argument('--max_depth_eval',     type=float, default=80, help='maximum depth for evaluation')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
+    parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
     params = parser.parse_args()
 
     val(params)

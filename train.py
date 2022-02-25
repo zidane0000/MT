@@ -96,22 +96,23 @@ def train(params):
                     f'{epoch}/{epochs - 1}', mem, smnt_loss, depth_loss))
 
         # Save model
-        ckpt = {'epoch': epoch,
-                'model': model.state_dict(),
-                'date': datetime.now().isoformat()}
-        torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))    
-
-        del ckpt
+        if (epoch % params.save_cycle) == 0:
+            ckpt = {'epoch': epoch,
+                    'model': model.state_dict(),
+                    'date': datetime.now().isoformat()}
+            torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
+            del ckpt
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
-    parser.add_argument('--project',            type=str, default='./runs/train/', help='directory to save checkpoints and summaries')
-    parser.add_argument('--name',               type=str, default='mt', help='save to project/name')
+    parser.add_argument('--root',               type=str, help='root for Cityscapes', default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes')
+    parser.add_argument('--project',            type=str, help='directory to save checkpoints and summaries', default='./runs/train/')
+    parser.add_argument('--name',               type=str, help='save to project/name', default='mt')
     parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
-    parser.add_argument('--batch-size',         type=int, default=8, help='total batch size for all GPUs')
-    parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=10)
+    parser.add_argument('--batch-size',         type=int, help='total batch size for all GPUs', default=8)
+    parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)

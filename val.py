@@ -152,7 +152,7 @@ def val(params, save_dir=None, model=None, compute_loss=None):
             np_predict_smnt = id2trainId(np_predict_smnt, reverse=True)
             np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
 
-            np_predict_depth = np_predict_depth[0].transpose(1,2,0)
+            np_predict_depth = np_predict_depth[0]
             cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
 
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)

@@ -84,7 +84,7 @@ def compute_bts_eval(predicts, ground_truths, min_depth_eval, max_depth_eval):
     return silog.mean(), abs_rel.mean(), log10.mean(), rmse.mean(), sq_rel.mean(), rmse_log.mean(), d1.mean(), d2.mean(), d3.mean()
 
 
-def val(params, save_dir=None, model=None, compute_loss=None):
+def val(params, save_dir=None, model=None, device=None, compute_loss=None):
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
         print("saving to " + str(save_dir))
@@ -112,6 +112,7 @@ def val(params, save_dir=None, model=None, compute_loss=None):
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     
     # val result
+    mean_loss = torch.zeros(2, device=device)
     smnt_mean_iou_val = 0
     smnt_iou_array_val = np.zeros((19,19))
     depth_val = np.zeros(9)
@@ -127,9 +128,10 @@ def val(params, save_dir=None, model=None, compute_loss=None):
 
         if compute_loss:
             loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
-            mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            val_bar.set_description(('mem : %4s  ' + 'val-semantic : %4.4g  ' + 'val-depth : %4.4g') % (
-                    mem, smnt_loss, depth_loss))
+            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+            mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
+            val_bar.set_description((' '*16 + 'mem:%8s' + '  val-semantic:%6.6g' + '  val-depth:%6.6g') % (
+                                        mem, mean_loss[0], mean_loss[1]))
         
         (predict_smnt, predict_depth) = output
         # upsample to origin size
@@ -162,10 +164,11 @@ def val(params, save_dir=None, model=None, compute_loss=None):
     smnt_iou_array_val /= len(val_bar)
     depth_val /= len(val_bar)
 
-    print('mean-IOU : %4.4f  ' % (smnt_mean_iou_val))
+    print('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
     depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
     for i in range(len(depth_val_str)):
-        print('%10s : %7.3f' % (depth_val_str[i], depth_val[i]))
+        print('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
+    print('-'*45)
 
     return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
 

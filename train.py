@@ -12,6 +12,7 @@ from datetime import datetime
 from torch.optim import SGD, Adam, lr_scheduler
 from tqdm import tqdm
 
+from val import val
 from utils.cityscapes import Create_Cityscapes
 from utils.general import one_cycle, increment_path, select_device
 from utils.loss import ComputeLoss
@@ -57,6 +58,9 @@ def train(params):
         model.train()
         pbar = enumerate(train_loader)
         pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
+
+        # mean loss
+        mean_loss = torch.zeros(2, device=device)
         for i, item in pbar:
             img, (smnt, depth) = item
             img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
@@ -72,28 +76,13 @@ def train(params):
 
             # log
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            pbar.set_description(('epoch : %4s  ' + 'mem : %4s  ' + '     semantic : %4.4g  ' + '     depth : %4.4g') % (
-                    f'{epoch}/{epochs - 1}', mem, smnt_loss, depth_loss))        
+            mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
+            pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
+                    f'{epoch}/{epochs - 1}', mem, mean_loss[0], mean_loss[1]))        
         scheduler.step()
 
         # Test
-        model.eval()
-        test_bar = enumerate(test_loader)
-        test_bar = tqdm(test_bar, total=len(test_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
-        for i, item in test_bar:
-            img, (smnt, depth) = item
-            img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-            smnt = smnt.to(device)
-            depth = depth.to(device)
-
-            with torch.no_grad():
-                output = model(img)
-                loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))            
-
-            # log
-            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            test_bar.set_description(('epoch : %4s  ' + 'mem : %4s  ' + 'test-semantic : %4.4g  ' + 'test-depth : %4.4g') % (
-                    f'{epoch}/{epochs - 1}', mem, smnt_loss, depth_loss))
+        val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
 
         # Save model
         if (epoch % params.save_cycle) == 0:
@@ -115,6 +104,8 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
+    parser.add_argument('--min_depth_eval',     type=float, default=1e-3, help='minimum depth for evaluation')
+    parser.add_argument('--max_depth_eval',     type=float, default=80, help='maximum depth for evaluation')
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)
     parser.add_argument('--end_learning_rate',  type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')

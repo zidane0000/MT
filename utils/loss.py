@@ -16,6 +16,9 @@ class silog_loss(nn.Module):
         if predict_depth.dim() > target_depth.dim():
             # (batch, h, w) -> (h, w)
             target_depth = torch.unsqueeze(target_depth, 1)
+        if predict_depth.dtype != target_depth.dtype:
+            predict_depth = predict_depth.float()
+            target_depth = target_depth.float()
         # https://github.com/dg-enlens/banet-depth-prediction/blob/master/loss.py
         # let's only compute the loss on non-null pixels from the ground-truth depth-map
         non_zero_mask = (predict_depth > 0) & (target_depth > 0)

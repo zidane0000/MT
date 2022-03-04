@@ -14,7 +14,6 @@ class MTmodel(nn.Module):
         '''
         super(MTmodel, self).__init__()
 
-        params.encoder = 'densenet161_bts'
         params.max_depth = 80
         self.encoder = encoder(params)
 

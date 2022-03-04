@@ -98,6 +98,7 @@ if __name__ == '__main__':
     parser.add_argument('--root',               type=str, help='root for Cityscapes', default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes')
     parser.add_argument('--project',            type=str, help='directory to save checkpoints and summaries', default='./runs/train/')
     parser.add_argument('--name',               type=str, help='save to project/name', default='mt')
+    parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')    
     parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
     parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=10)
     parser.add_argument('--batch-size',         type=int, help='total batch size for all GPUs', default=8)

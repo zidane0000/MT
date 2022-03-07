@@ -38,16 +38,6 @@ def weights_init_xavier(m):
             torch.nn.init.zeros_(m.bias)
             
 
-class silog_loss(nn.Module):
-    def __init__(self, variance_focus):
-        super(silog_loss, self).__init__()
-        self.variance_focus = variance_focus
-
-    def forward(self, depth_est, depth_gt, mask):
-        d = torch.log(depth_est[mask]) - torch.log(depth_gt[mask])
-        return torch.sqrt((d ** 2).mean() - self.variance_focus * (d.mean() ** 2)) * 10.0
-
-
 class atrous_conv(nn.Sequential):
     def __init__(self, in_channels, out_channels, dilation, apply_bn_first=True):
         super(atrous_conv, self).__init__()
@@ -262,68 +252,3 @@ class bts(nn.Module):
         final_depth = self.params.max_depth * self.get_depth(iconv1)
         
         return depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth
-
-class encoder(nn.Module):
-    def __init__(self, params):
-        super(encoder, self).__init__()
-        self.params = params
-        import torchvision.models as models
-        if params.encoder == 'densenet121':
-            self.base_model = models.densenet121(pretrained=True).features
-            self.feat_names = ['relu0', 'pool0', 'transition1', 'transition2', 'norm5']
-            self.feat_out_channels = [64, 64, 128, 256, 1024]
-        elif params.encoder == 'densenet161':
-            self.base_model = models.densenet161(pretrained=True).features
-            self.feat_names = ['relu0', 'pool0', 'transition1', 'transition2', 'norm5']
-            self.feat_out_channels = [96, 96, 192, 384, 2208]
-        elif params.encoder == 'resnet50':
-            self.base_model = models.resnet50(pretrained=True)
-            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
-            self.feat_out_channels = [64, 256, 512, 1024, 2048]
-        elif params.encoder == 'resnet101':
-            self.base_model = models.resnet101(pretrained=True)
-            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
-            self.feat_out_channels = [64, 256, 512, 1024, 2048]
-        elif params.encoder == 'resnext50':
-            self.base_model = models.resnext50_32x4d(pretrained=True)
-            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
-            self.feat_out_channels = [64, 256, 512, 1024, 2048]
-        elif params.encoder == 'resnext101':
-            self.base_model = models.resnext101_32x8d(pretrained=True)
-            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
-            self.feat_out_channels = [64, 256, 512, 1024, 2048]
-        elif params.encoder == 'mobilenetv2':
-            self.base_model = models.mobilenet_v2(pretrained=True).features
-            self.feat_inds = [2, 4, 7, 11, 19]
-            self.feat_out_channels = [16, 24, 32, 64, 1280]
-            self.feat_names = []
-        else:
-            print('Not supported encoder: {}'.format(params.encoder))
-
-    def forward(self, x):
-        feature = x
-        skip_feat = []
-        i = 1
-        for k, v in self.base_model._modules.items():
-            if 'fc' in k or 'avgpool' in k:
-                continue
-            feature = v(feature)
-            if self.params.encoder == 'mobilenetv2':
-                if i == 2 or i == 4 or i == 7 or i == 11 or i == 19:
-                    skip_feat.append(feature)
-            else:
-                if any(x in k for x in self.feat_names):
-                    skip_feat.append(feature)
-            i = i + 1
-        return skip_feat
-    
-
-class BtsModel(nn.Module):
-    def __init__(self, params):
-        super(BtsModel, self).__init__()
-        self.encoder = encoder(params)
-        self.decoder = bts(params, self.encoder.feat_out_channels, params.bts_size)
-
-    def forward(self, x, focal):
-        skip_feat = self.encoder(x)
-        return self.decoder(skip_feat, focal)

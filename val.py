@@ -177,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
     parser.add_argument('--project',            type=str, default='./runs/val/', help='directory to save checkpoints and summaries')
     parser.add_argument('--name',               type=str, default='mt', help='save to project/name')
+    parser.add_argument('--encoder',            type=str, default='densenet161', help='Choose Encoder in MT') 
     parser.add_argument('--weight',             type=str, default=None, help='model.pt path')
     parser.add_argument('--batch-size',         type=int, default=8, help='total batch size for all GPUs')
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')

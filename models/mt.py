@@ -4,8 +4,10 @@ import torch.nn as nn
 import torchvision.models as models
 from torchsummary import summary
 
+from .encoder import encoder
 from .decoder.ccnet import CCNet, RCCAModule
-from .decoder.bts import encoder, bts
+from .decoder.bts import bts
+
 
 class MTmodel(nn.Module):
     def __init__(self, params):

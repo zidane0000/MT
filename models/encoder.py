@@ -89,7 +89,7 @@ class CCNet_resnet50(nn.Module):
     def forward(self, x):
         outs = []
         
-        x = self.relu1(self.bn1(self.conv1(x)))\
+        x = self.relu1(self.bn1(self.conv1(x)))
         outs.append(x)
         
         x = self.relu2(self.bn2(self.conv2(x)))
@@ -105,7 +105,6 @@ class CCNet_resnet50(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)        
         x = self.layer4(x)
-        print(x.shape)
         outs.append(x)
 
         return outs

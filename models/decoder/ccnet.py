@@ -142,6 +142,6 @@ class CCNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, labels=None):
-        # x = self.layer4(x)
+        x = self.layer4(x)
         x = self.head(x, self.recurrence)
         return x

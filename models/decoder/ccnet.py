@@ -26,15 +26,15 @@ class CrissCrossAttention(nn.Module):
     def forward(self, x):
         m_batchsize, _, height, width = x.size()
         proj_query = self.query_conv(x)
-        proj_query_H = proj_query.permute(0,3,1,2).contiguous().view(m_batchsize*width,-1,height).permute(0, 2, 1)
-        proj_query_W = proj_query.permute(0,2,1,3).contiguous().view(m_batchsize*height,-1,width).permute(0, 2, 1)
+        proj_query_H = proj_query.permute(0,3,1,2).contiguous().view(m_batchsize*width,-1,height).permute(0, 2, 1).contiguous()
+        proj_query_W = proj_query.permute(0,2,1,3).contiguous().view(m_batchsize*height,-1,width).permute(0, 2, 1).contiguous()
         proj_key = self.key_conv(x)
         proj_key_H = proj_key.permute(0,3,1,2).contiguous().view(m_batchsize*width,-1,height)
         proj_key_W = proj_key.permute(0,2,1,3).contiguous().view(m_batchsize*height,-1,width)
         proj_value = self.value_conv(x)
         proj_value_H = proj_value.permute(0,3,1,2).contiguous().view(m_batchsize*width,-1,height)
         proj_value_W = proj_value.permute(0,2,1,3).contiguous().view(m_batchsize*height,-1,width)
-        energy_H = (torch.bmm(proj_query_H, proj_key_H)+self.INF(m_batchsize, height, width)).view(m_batchsize,width,height,height).permute(0,2,1,3)
+        energy_H = (torch.bmm(proj_query_H, proj_key_H)+self.INF(m_batchsize, height, width)).view(m_batchsize,width,height,height).permute(0,2,1,3).contiguous()
         energy_W = torch.bmm(proj_query_W, proj_key_W).view(m_batchsize,height,width,width)
         concate = self.softmax(torch.cat([energy_H, energy_W], 3))
 
@@ -42,8 +42,8 @@ class CrissCrossAttention(nn.Module):
         #print(concate)
         #print(att_H) 
         att_W = concate[:,:,:,height:height+width].contiguous().view(m_batchsize*height,width,width)
-        out_H = torch.bmm(proj_value_H, att_H.permute(0, 2, 1)).view(m_batchsize,width,-1,height).permute(0,2,3,1)
-        out_W = torch.bmm(proj_value_W, att_W.permute(0, 2, 1)).view(m_batchsize,height,-1,width).permute(0,2,1,3)
+        out_H = torch.bmm(proj_value_H, att_H.permute(0, 2, 1)).view(m_batchsize,width,-1,height).permute(0,2,3,1).contiguous()
+        out_W = torch.bmm(proj_value_W, att_W.permute(0, 2, 1)).view(m_batchsize,height,-1,width).permute(0,2,1,3).contiguous()
         #print(out_H.size(),out_W.size())
         return self.gamma*(out_H + out_W) + x
 

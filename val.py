@@ -48,16 +48,16 @@ def compute_ccnet_eval(predicts, ground_truths, class_num=19):
     return mean_IU, IU_array
 
 
-def compute_bts_eval(predicts, ground_truths, min_depth_eval, max_depth_eval):
+def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
     silog, log10, rmse, rmse_log, abs_rel, sq_rel, d1, d2, d3 = (np.zeros(len(predicts), np.float32) for i in range(9))
 
     for i in range(len(predicts)):
-        predicts[i][predicts[i] < min_depth_eval] = min_depth_eval
-        predicts[i][predicts[i] > max_depth_eval] = max_depth_eval
-        predicts[i][np.isinf(predicts[i])] = max_depth_eval
-        predicts[i][np.isnan(predicts[i])] = min_depth_eval
+        predicts[i][predicts[i] < min_depth] = min_depth
+        predicts[i][predicts[i] > max_depth] = max_depth
+        predicts[i][np.isinf(predicts[i])] = max_depth
+        predicts[i][np.isnan(predicts[i])] = min_depth
 
-        valid_mask = np.logical_and(ground_truths[i] > min_depth_eval, ground_truths[i] < max_depth_eval)
+        valid_mask = np.logical_and(ground_truths[i] > min_depth, ground_truths[i] < max_depth)
         predict = predicts[i][valid_mask]        
         ground_truth = ground_truths[i][valid_mask]
 
@@ -147,7 +147,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
 
         np_predict_depth = predict_depth.cpu().numpy().squeeze().astype(np.float32)
         np_gt_depth = depth.cpu().numpy().astype(np.float32)
-        depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth_eval, params.max_depth_eval))
+        depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
                 
         if params.plot:            
             np_predict_smnt = np_predict_smnt[0]
@@ -177,14 +177,14 @@ if __name__ == '__main__':
     parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
     parser.add_argument('--project',            type=str, default='./runs/val/', help='directory to save checkpoints and summaries')
     parser.add_argument('--name',               type=str, default='mt', help='save to project/name')
-    parser.add_argument('--encoder',            type=str, default='densenet161', help='Choose Encoder in MT') 
+    parser.add_argument('--encoder',            type=str, default='densenet161', help='Choose Encoder in MT')
     parser.add_argument('--weight',             type=str, default=None, help='model.pt path')
     parser.add_argument('--batch-size',         type=int, default=8, help='total batch size for all GPUs')
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',       type=int, default=256, help='input height')
     parser.add_argument('--input_width',        type=int, default=512, help='input width')
-    parser.add_argument('--min_depth_eval',     type=float, default=1e-3, help='minimum depth for evaluation')
-    parser.add_argument('--max_depth_eval',     type=float, default=80, help='maximum depth for evaluation')
+    parser.add_argument('--min_depth',     type=float, default=1e-3, help='minimum depth')
+    parser.add_argument('--max_depth',     type=float, default=80, help='maximum depth')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')

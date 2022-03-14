@@ -37,10 +37,16 @@ def train(params):
     print("load model to device")
 
     # Optimizer
-    optimizer = Adam([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
-                      {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
-                      {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
-                     lr=params.learning_rate)
+    if params.adam:
+        optimizer = Adam([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
+                          {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
+                          {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
+                         lr=params.learning_rate, betas=(params.momentum, 0.999))
+    else:
+        optimizer = SGD([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
+                          {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
+                          {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
+                         lr=params.learning_rate, momentum=params.momentum)
 
     # Scheduler
     if params.linear_learning_rate:
@@ -101,13 +107,14 @@ if __name__ == '__main__':
     parser.add_argument('--root',               type=str, help='root for Cityscapes', default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes')
     parser.add_argument('--project',            type=str, help='directory to save checkpoints and summaries', default='./runs/train/')
     parser.add_argument('--name',               type=str, help='save to project/name', default='mt')
-    parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')    
+    parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')
     parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
     parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=10)
     parser.add_argument('--batch-size',         type=int, help='total batch size for all GPUs', default=8)
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
+    parser.add_argument("--momentum",           type=float, help="Momentum component of the optimiser.", default=0.937)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)
     parser.add_argument('--end_learning_rate',  type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
@@ -117,13 +124,14 @@ if __name__ == '__main__':
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
+    parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
 
     # Semantic Segmentation
-    parser.add_argument('--class',            type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 
-    # Depth Estimation    
-    parser.add_argument('--min_depth_eval',     type=float, help='minimum depth for evaluation', default=1e-3)
-    parser.add_argument('--max_depth_eval',     type=float, help='maximum depth for evaluation', default=80.0)
+    # Depth Estimation
+    parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
+    parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
 
     params = parser.parse_args()
 

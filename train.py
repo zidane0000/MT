@@ -37,7 +37,10 @@ def train(params):
     print("load model to device")
 
     # Optimizer
-    optimizer = Adam(model.parameters(), lr=params.learning_rate)
+    optimizer = Adam([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
+                      {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
+                      {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
+                     lr=params.learning_rate)
 
     # Scheduler
     if params.linear_learning_rate:
@@ -105,8 +108,9 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
-    parser.add_argument('--min_depth_eval',     type=float, default=1e-3, help='minimum depth for evaluation')
-    parser.add_argument('--max_depth_eval',     type=float, default=80, help='maximum depth for evaluation')
+    parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
+    parser.add_argument('--min_depth_eval',     type=float, help='minimum depth for evaluation', default=1e-3)
+    parser.add_argument('--max_depth_eval',     type=float, help='maximum depth for evaluation', default=80.0)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)
     parser.add_argument('--end_learning_rate',  type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')

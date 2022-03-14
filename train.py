@@ -109,8 +109,6 @@ if __name__ == '__main__':
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
-    parser.add_argument('--min_depth_eval',     type=float, help='minimum depth for evaluation', default=1e-3)
-    parser.add_argument('--max_depth_eval',     type=float, help='maximum depth for evaluation', default=80.0)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)
     parser.add_argument('--end_learning_rate',  type=float, help='final OneCycleLR learning rate (lr0 * lrf)', default=1e-2)
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -119,6 +117,14 @@ if __name__ == '__main__':
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
+
+    # Semantic Segmentation
+    parser.add_argument('--class',            type=int, help='Number of classes to predict (including background).', default=19)
+
+    # Depth Estimation    
+    parser.add_argument('--min_depth_eval',     type=float, help='minimum depth for evaluation', default=1e-3)
+    parser.add_argument('--max_depth_eval',     type=float, help='maximum depth for evaluation', default=80.0)
+
     params = parser.parse_args()
 
     train(params)

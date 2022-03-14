@@ -16,15 +16,14 @@ class MTmodel(nn.Module):
         '''
         super(MTmodel, self).__init__()
 
-        params.max_depth = 80
         self.encoder = encoder(params)
 
+        # Semantic
         self.recurrence = 2 # For 2 loop in RRCAModule
-        self.num_classes = 19
-        self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=self.num_classes, recurrence=self.recurrence)
+        self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
         # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
 
-        # depth
+        # Depth
         bts_size = 512
         self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
 

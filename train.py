@@ -47,7 +47,7 @@ def train(params):
                           {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
                           {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
                          lr=params.learning_rate, momentum=params.momentum)
-    print('optimizer:') + type(optimizer).__name__)
+    print(f"optimizer : {type(optimizer).__name__}")
 
     # Scheduler
     if params.linear_learning_rate:

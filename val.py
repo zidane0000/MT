@@ -170,7 +170,10 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
         print('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
     print('-'*45)
 
-    return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
+    if compute_loss:
+        return (mean_loss[0], mean_loss[1]), (smnt_mean_iou_val, smnt_iou_array_val), depth_val
+    else:
+        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

@@ -6,6 +6,7 @@ import sys
 import time
 import torch
 import cv2
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 from datetime import datetime
@@ -62,6 +63,10 @@ def train(params):
 
     # loss
     compute_loss = ComputeLoss()
+    smnt_loss_history = []
+    depth_loss_history = []
+    smnt_val_loss_history = []
+    depth_val_loss_history = []
 
     for epoch in range(epochs):
         # Train
@@ -90,10 +95,15 @@ def train(params):
             pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
                     f'{epoch}/{epochs - 1}', mem, mean_loss[0], mean_loss[1]))        
         scheduler.step()
-
+        
         # Test
-        val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
+        (smnt_val_loss, depth_val_loss), _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
 
+        smnt_loss_history.append(mean_loss[0])
+        depth_loss_history.append(mean_loss[1])
+        smnt_val_loss_history.append(smnt_val_loss)
+        depth_val_loss_history.append(depth_val_loss)
+        
         # Save model
         if (epoch % params.save_cycle) == 0:
             ckpt = {'epoch': epoch,
@@ -101,6 +111,13 @@ def train(params):
                     'date': datetime.now().isoformat()}
             torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
             del ckpt
+    
+    plt.plot(range(epochs), smnt_loss_history)
+    plt.plot(range(epochs), depth_loss_history)
+    plt.plot(range(epochs), smnt_val_loss_history)
+    plt.plot(range(epochs), depth_val_loss_history)
+    plt.legend(['semantic','depth','semantic(val)','depth(val)'])
+    plt.savefig(save_dir / 'history.png')
 
 
 if __name__ == '__main__':

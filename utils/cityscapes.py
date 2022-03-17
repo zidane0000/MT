@@ -9,7 +9,10 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 
-from .general import id2trainId, put_palette
+try:
+    from .general import id2trainId, put_palette
+except:
+    from general import id2trainId, put_palette
 
 
 class Cityscapes(Dataset):
@@ -81,9 +84,10 @@ class Cityscapes(Dataset):
                 target_types = []
                 for t in self.target_type:
                     target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                 self._get_target_suffix(self.mode, t))                
+                                                 self._get_target_suffix(self.mode, t))
                     target_types.append(os.path.join(target_dir, target_name))
-
+                    
+                print(os.path.join(img_dir, file_name))
                 self.images.append(os.path.join(img_dir, file_name))
                 self.targets.append(target_types)
 

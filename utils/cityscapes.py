@@ -87,7 +87,6 @@ class Cityscapes(Dataset):
                                                  self._get_target_suffix(self.mode, t))
                     target_types.append(os.path.join(target_dir, target_name))
                     
-                print(os.path.join(img_dir, file_name))
                 self.images.append(os.path.join(img_dir, file_name))
                 self.targets.append(target_types)
 

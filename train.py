@@ -19,6 +19,8 @@ from utils.general import one_cycle, increment_path, select_device
 from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
+WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+
 def train(params):
     epochs = params.epochs
     device = select_device(params.device)
@@ -34,6 +36,15 @@ def train(params):
         print("use multi-gpu, device=" + params.device)
         device_ids = [int(i) for i in params.device.split(',')]
         model = torch.nn.DataParallel(model, device_ids = device_ids)
+    
+    # DDP mode
+    if params.local_rank != -1:
+        assert torch.cuda.device_count() > params.local_rank, 'insufficient CUDA devices for DDP command'
+        assert params.batch_size % WORLD_SIZE == 0, '--batch-size must be multiple of CUDA device count'
+        torch.cuda.set_device(params.local_rank)
+        device = torch.device('cuda', params.local_rank)
+        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+    
     model = model.to(device)
     print("load model to device")
 
@@ -132,6 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
+    parser.add_argument('--local_rank',         type=int,   help='DDP parameter, do not modify', default=-1)
     parser.add_argument("--momentum",           type=float, help="Momentum component of the optimiser.", default=0.937)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)

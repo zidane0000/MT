@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import scipy.ndimage as nd
+import numpy as np
 
 
 class silog_loss(nn.Module):
@@ -42,10 +44,12 @@ class CriterionDSN(nn.Module):
 
     def forward(self, preds, target):
         h, w = target.size(1), target.size(2)
+        ph, pw = preds.size(2), preds.size(3)
 
-        target = target.to(dtype=torch.long)
-        scale_pred = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
-        loss = self.criterion(scale_pred, target)
+        if ph != h or pw != w:
+            preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
+                    
+        loss = self.criterion(preds, target)
         return loss
 
     
@@ -117,7 +121,7 @@ class OhemCrossEntropy2d(nn.Module):
             pred = prob[label, np.arange(len(label), dtype=np.int32)]
             kept_flag = pred <= threshold
             valid_inds = valid_inds[kept_flag]
-            print('Labels: {} {}'.format(len(valid_inds), threshold))
+            # print('Labels: {} {}'.format(len(valid_inds), threshold))
 
         label = input_label[valid_inds].copy()
         input_label.fill(self.ignore_label)
@@ -137,7 +141,8 @@ class OhemCrossEntropy2d(nn.Module):
         assert not target.requires_grad
 
         input_prob = F.softmax(predict, 1)
-        target = self.generate_new_target(input_prob, target)
+        target = self.generate_new_target(input_prob, target)        
+        
         return self.criterion(predict, target)
 
 
@@ -153,11 +158,16 @@ class CriterionOhemDSN(nn.Module):
 
     def forward(self, preds, target):
         h, w = target.size(1), target.size(2)
+        ph, pw = preds.size(2), preds.size(3)
 
-        scale_pred = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
-        loss1 = self.criterion1(scale_pred, target)
-
-        loss2 = self.criterion2(scale_pred, target)
+        if ph != h or pw != w:
+            preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
+                        
+        loss1 = self.criterion1(preds, target)
+        
+        if target.dtype != torch.long:
+            target = target.to(torch.long)
+        loss2 = self.criterion2(preds, target)
 
         return loss1 + loss2*0.4
 

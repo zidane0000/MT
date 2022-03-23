@@ -171,7 +171,7 @@ class Cityscapes(Dataset):
             return 'disparity.png'
 
 
-def Create_Cityscapes(params, mode='train'):
+def Create_Cityscapes(params, mode='train', rank=-1):
     batch_size = params.batch_size
     workers = params.workers
     input_height, input_width = params.input_height, params.input_width
@@ -184,7 +184,7 @@ def Create_Cityscapes(params, mode='train'):
                         target_type=['semantic', 'disparity'],
                         random_flip=params.random_flip,
                         random_crop=params.random_crop)
-    sampler = get_sampler(dataset)
+    sampler = None if rank == -1 else get_sampler(dataset)
     dataloader = DataLoader(
                     dataset, 
                     batch_size=batch_size, 

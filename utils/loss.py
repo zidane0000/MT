@@ -13,8 +13,8 @@ def scale_invariant_loss(predicts: torch.Tensor, targets: torch.Tensor, reductio
     """
     predicts = predicts.flatten(start_dim=1)
     targets = targets.flatten(start_dim=1)
-    alpha = (targets - outs).mean(dim=1, keepdim=True)
-    return F.mse_loss(outs + alpha, targets, reduction=reduction)
+    alpha = (targets - predicts).mean(dim=1, keepdim=True)
+    return F.mse_loss(predicts + alpha, targets, reduction=reduction)
 
 
 class silog_loss(nn.Module):

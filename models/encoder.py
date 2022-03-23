@@ -148,7 +148,7 @@ class encoder(nn.Module):
             self.base_model = CCNet_resnet50(Bottleneck, layers)
             self.feat_out_channels = [64, 64, 128, 128, 2048]
         else:
-            print('Not supported encoder: {}'.format(params.encoder))
+            LOGGER.error('Not supported encoder: {}'.format(params.encoder))
 
     def forward(self, x):
         if self.params.encoder == 'CCNet_resnet50':

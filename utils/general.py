@@ -1,4 +1,5 @@
 import os
+import logging
 import re
 import glob
 import numpy as np
@@ -66,6 +67,16 @@ def put_palette(label, num_classes, palette=None, path=None):
 
 
 # Inherit from YOLOR
+def set_logging(name=None, verbose=True):
+    # Sets level and returns logger
+    rank = int(os.getenv('RANK', -1))  # rank in world for Multi-GPU trainings
+    logging.basicConfig(format="%(message)s", level=logging.INFO if (verbose and rank in (-1, 0)) else logging.WARNING)
+    return logging.getLogger(name)
+
+
+LOGGER = set_logging(__name__)  # define globally (used in train.py, val.py, detect.py, etc.)
+
+
 def one_cycle(y1=0.0, y2=1.0, steps=100):
     # lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf
     return lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1
@@ -115,9 +126,9 @@ def select_device(device='', batch_size=None, newline=True):
             assert batch_size % n == 0, f'batch-size {batch_size} not multiple of GPU count {n}'        
         for i, d in enumerate(devices):
             p = torch.cuda.get_device_properties(i)
-            print(f"Find CUDA:{d} ({p.name}, {p.total_memory / 1024 ** 2:.0f}MiB)")  # bytes to MB
+            LOGGER.info(f"Find CUDA:{d} ({p.name}, {p.total_memory / 1024 ** 2:.0f}MiB)")  # bytes to MB
     else:
-        print('Find CPU')
+        LOGGER.info('Find CPU')
 
     return torch.device('cuda:0' if cuda else 'cpu')
 

@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from val import val
 from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path, select_device
+from utils.general import one_cycle, increment_path, select_device, LOGGER
 from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
@@ -24,25 +24,14 @@ RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 
-def train(params):
+def train(params, device, save_dir):
     epochs = params.epochs
-    device = select_device(params.device, batch_size=params.batch_size)
-    if LOCAL_RANK != -1:
-        assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
-        assert params.batch_size % WORLD_SIZE == 0, '--batch-size must be multiple of CUDA device count'
-        torch.cuda.set_device(LOCAL_RANK)
-        device = torch.device('cuda', LOCAL_RANK)
-        torch.distributed.init_process_group(backend="nccl" if torch.distributed.is_nccl_available() else "gloo", init_method='env://')
     cuda = device.type != 'cpu'
 
-    # Directories
-    save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
-    print("saving to " + str(save_dir))
-
     # Model
-    print("begin to bulid up model...")
+    LOGGER.info("begin to bulid up model...")
     model = MTmodel(params).to(device)
-    print("load model to device")
+    LOGGER.info("load model to device")
 
     # Optimizer
     if params.adam:
@@ -55,7 +44,7 @@ def train(params):
                           {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
                           {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
                          lr=params.learning_rate, momentum=params.momentum)
-    print(f"optimizer : {type(optimizer).__name__}")
+    LOGGER.info(f"optimizer : {type(optimizer).__name__}")
 
     # Scheduler
     if params.linear_learning_rate:
@@ -66,13 +55,13 @@ def train(params):
     
     # DP mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
-        print('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
+        LOGGER.info('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
         model = torch.nn.DataParallel(model)
         
     # SyncBatchNorm
     if params.sync_bn and cuda and RANK != -1:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
-        print('Using SyncBatchNorm()')
+        LOGGER.info('Using SyncBatchNorm()')
         
     # DDP mode
     '''
@@ -84,7 +73,7 @@ def train(params):
     '''
     if cuda and RANK != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, find_unused_parameters=True, broadcast_buffers=False)
-        print('Using DDP')
+        LOGGER.info('Using DDP')
         
     # Dataset, DataLoader
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
@@ -98,6 +87,9 @@ def train(params):
     depth_val_loss_history = []
 
     for epoch in range(epochs):
+        if RANK != -1:
+            train_loader.sampler.set_epoch(epoch)
+            
         # Train
         model.train()
         pbar = enumerate(train_loader)
@@ -183,5 +175,18 @@ if __name__ == '__main__':
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
 
     params = parser.parse_args()
+    
+    # Put in main will only do once, else if DataParraellel will do more times
+    device = select_device(params.device, batch_size=params.batch_size)
+    if LOCAL_RANK != -1:
+        assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
+        assert params.batch_size % WORLD_SIZE == 0, '--batch-size must be multiple of CUDA device count'
+        torch.cuda.set_device(LOCAL_RANK)
+        device = torch.device('cuda', LOCAL_RANK)
+        torch.distributed.init_process_group(backend="nccl" if torch.distributed.is_nccl_available() else "gloo", init_method='env://')
+        
+    # Directories
+    save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
+    LOGGER.info("saving to " + str(save_dir))
 
-    train(params)
+    train(params, device, save_dir)

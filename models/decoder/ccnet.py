@@ -38,12 +38,9 @@ class CrissCrossAttention(nn.Module):
         concate = self.softmax(torch.cat([energy_H, energy_W], 3))
 
         att_H = concate[:,:,:,0:height].permute(0,2,1,3).contiguous().view(m_batchsize*width,height,height)
-        #print(concate)
-        #print(att_H) 
         att_W = concate[:,:,:,height:height+width].contiguous().view(m_batchsize*height,width,width)
         out_H = torch.bmm(proj_value_H, att_H.permute(0, 2, 1)).view(m_batchsize,width,-1,height).permute(0,2,3,1).contiguous()
         out_W = torch.bmm(proj_value_W, att_W.permute(0, 2, 1)).view(m_batchsize,height,-1,width).permute(0,2,1,3).contiguous()
-        #print(out_H.size(),out_W.size())
         return self.gamma*(out_H + out_W) + x
 
 
@@ -52,14 +49,14 @@ class RCCAModule(nn.Module):
         super(RCCAModule, self).__init__()
         inter_channels = in_channels // 4
         self.conva = nn.Sequential(nn.Conv2d(in_channels, inter_channels, 3, padding=1, bias=False),
-                                   InPlaceABN(inter_channels))
+                                   InPlaceABNSync(inter_channels))
         self.cca = CrissCrossAttention(inter_channels)
         self.convb = nn.Sequential(nn.Conv2d(inter_channels, inter_channels, 3, padding=1, bias=False),
-                                   InPlaceABN(inter_channels))
+                                   InPlaceABNSync(inter_channels))
 
         self.bottleneck = nn.Sequential(
             nn.Conv2d(in_channels+inter_channels, out_channels, kernel_size=3, padding=1, dilation=1, bias=False),
-            InPlaceABN(out_channels),
+            InPlaceABNSync(out_channels),
             nn.Dropout2d(0.1),
             nn.Conv2d(512, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
             )

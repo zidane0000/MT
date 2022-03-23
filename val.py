@@ -8,7 +8,7 @@ from pathlib import Path
 
 from models.mt import MTmodel
 from utils.loss import ComputeLoss
-from utils.general import increment_path, select_device, id2trainId, put_palette
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -87,22 +87,22 @@ def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
 def val(params, save_dir=None, model=None, device=None, compute_loss=None):
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
-        print("saving to " + str(save_dir))
+        LOGGER.info("saving to " + str(save_dir))
 
     if model is None:        
         device = select_device(params.device)
-        print("begin load model with ckpt...")
+        LOGGER.info("begin load model with ckpt...")
         ckpt = torch.load(params.weight)
         model = MTmodel(params)
         if device != 'cpu' and torch.cuda.device_count() > 1:
-            print("use multi-gpu, device=" + params.device)
+            LOGGER.info("use multi-gpu, device=" + params.device)
             device_ids = [int(i) for i in params.device.split(',')]
             model = torch.nn.DataParallel(model, device_ids = device_ids)
 
         # if pt is save from multi-gpu, model need para first, see https://blog.csdn.net/qq_32998593/article/details/89343507
         model.load_state_dict(ckpt['model'])
         model.to(device)
-        print(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")        
+        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")        
     model.eval()
 
     # Dataset, DataLoader
@@ -168,11 +168,11 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
     smnt_iou_array_val /= len(val_bar)
     depth_val /= len(val_bar)
 
-    print('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
+    LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
     depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
     for i in range(len(depth_val_str)):
-        print('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
-    print('-'*45)
+        LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
+    LOGGER.info('-'*45)
 
     if compute_loss:
         return (mean_loss[0], mean_loss[1]), (smnt_mean_iou_val, smnt_iou_array_val), depth_val

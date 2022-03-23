@@ -3,9 +3,10 @@ import json
 import os
 import cv2
 import random
+import torch
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 
@@ -13,7 +14,15 @@ try:
     from .general import id2trainId, put_palette
 except:
     from general import id2trainId, put_palette
-
+    
+    
+def get_sampler(dataset):
+    if torch.distributed.is_initialized():
+        from torch.utils.data.distributed import DistributedSampler
+        return DistributedSampler(dataset)
+    else:
+        return None
+    
 
 class Cityscapes(Dataset):
     def __init__(
@@ -175,7 +184,13 @@ def Create_Cityscapes(params, mode='train'):
                         target_type=['semantic', 'disparity'],
                         random_flip=params.random_flip,
                         random_crop=params.random_crop)
-    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=workers)
+    sampler = get_sampler(dataset)
+    dataloader = DataLoader(
+                    dataset, 
+                    batch_size=batch_size, 
+                    num_workers=workers, 
+                    shuffle=True and sampler is None,
+                    sampler=sampler,)
     
     return dataset, dataloader
 
@@ -218,4 +233,19 @@ if __name__ == '__main__':
         print(img.shape)
         print(smnt.shape)
         print(depth.shape)
+        
+        np_smnt = smnt[0].cpu().numpy()
+        np_smnt = id2trainId(np_smnt, reverse=True)
+        np_smnt = put_palette(np_smnt, num_classes=255, path='smnt.jpg')
+        
+        np_depth = depth[0].cpu().numpy()
+        cv2.imwrite('depth.jpg', np_depth)
+            
+        heat_depth = (np_depth * 255).astype('uint8')
+        heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
+        cv2.imwrite('heat.jpg', heat_depth)
+
+        np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+        cv2.imwrite('img.jpg', np_img)
+        
         input()

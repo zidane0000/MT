@@ -5,6 +5,18 @@ import scipy.ndimage as nd
 import numpy as np
 
 
+def scale_invariant_loss(predicts: torch.Tensor, targets: torch.Tensor, reduction="mean"):
+    """
+    outs: N ( x C) x H x W
+    targets: N ( x C) x H x W
+    reduction: ...
+    """
+    predicts = predicts.flatten(start_dim=1)
+    targets = targets.flatten(start_dim=1)
+    alpha = (targets - outs).mean(dim=1, keepdim=True)
+    return F.mse_loss(outs + alpha, targets, reduction=reduction)
+
+
 class silog_loss(nn.Module):
     '''
         scale-invariant error
@@ -49,6 +61,8 @@ class CriterionDSN(nn.Module):
         if ph != h or pw != w:
             preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
                     
+        if target.dtype != torch.long:
+            target = target.to(torch.long)
         loss = self.criterion(preds, target)
         return loss
 
@@ -175,7 +189,7 @@ class CriterionOhemDSN(nn.Module):
 class ComputeLoss:
     def __init__(self):
         super(ComputeLoss, self).__init__()
-        self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
+        self.semantic_loss_function = CriterionDSN() # CriterionOhemDSN()
         self.depth_loss_function = silog_loss()
     
     def __call__(self, predicts, targets):

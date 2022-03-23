@@ -19,11 +19,21 @@ from utils.general import one_cycle, increment_path, select_device
 from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
+LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
+RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+
 
 def train(params):
     epochs = params.epochs
-    device = select_device(params.device)
+    device = select_device(params.device, batch_size=params.batch_size)
+    if LOCAL_RANK != -1:
+        assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
+        assert params.batch_size % WORLD_SIZE == 0, '--batch-size must be multiple of CUDA device count'
+        torch.cuda.set_device(LOCAL_RANK)
+        device = torch.device('cuda', LOCAL_RANK)
+        torch.distributed.init_process_group(backend="nccl" if torch.distributed.is_nccl_available() else "gloo", init_method='env://')
+    cuda = device.type != 'cpu'
 
     # Directories
     save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
@@ -31,21 +41,7 @@ def train(params):
 
     # Model
     print("begin to bulid up model...")
-    model = MTmodel(params)
-    if device != 'cpu' and torch.cuda.device_count() > 1:
-        print("use multi-gpu, device=" + params.device)
-        device_ids = [int(i) for i in params.device.split(',')]
-        model = torch.nn.DataParallel(model, device_ids = device_ids)
-    
-    # DDP mode
-    if params.local_rank != -1:
-        assert torch.cuda.device_count() > params.local_rank, 'insufficient CUDA devices for DDP command'
-        assert params.batch_size % WORLD_SIZE == 0, '--batch-size must be multiple of CUDA device count'
-        torch.cuda.set_device(params.local_rank)
-        device = torch.device('cuda', params.local_rank)
-        torch.distributed.init_process_group(backend="nccl", init_method="env://")
-    
-    model = model.to(device)
+    model = MTmodel(params).to(device)
     print("load model to device")
 
     # Optimizer
@@ -68,6 +64,28 @@ def train(params):
         lf = one_cycle(1, params.end_learning_rate, epochs)  # cosine 1->params.end_learning_rate
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     
+    # DP mode
+    if cuda and RANK == -1 and torch.cuda.device_count() > 1:
+        print('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
+        model = torch.nn.DataParallel(model)
+        
+    # SyncBatchNorm
+    if params.sync_bn and cuda and RANK != -1:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+        print('Using SyncBatchNorm()')
+        
+    # DDP mode
+    '''
+    多卡訓練的模型設置： 
+        最主要的是find_unused_parameters和broadcast_buffers參數； 
+        find_unused_parameters：如果模型的輸出有不需要進行反傳的(比如部分參數被凍結/或者網絡前傳是動態的)，設置此參數為True;如果你的代碼運行後卡住某個地方不動，基本上就是該參數的問題。
+        broadcast_buffers：設置為True時，在模型執行forward之前，gpu0會把buffer中的參數值全部覆蓋
+        到別的gpu上。注意這和同步BN並不一樣，同步BN應該使用SyncBatchNorm。
+    '''
+    if cuda and RANK != -1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, find_unused_parameters=True, broadcast_buffers=False)
+        print('Using DDP')
+        
     # Dataset, DataLoader
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
     test_dataset, test_loader = Create_Cityscapes(params, mode='val') # semantic no test data
@@ -155,6 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
+    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
 
     # Semantic Segmentation
     parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)

@@ -4,8 +4,7 @@ import torch.nn.functional as F
 from torch.nn import Softmax
 import functools
 from inplace_abn import InPlaceABN, InPlaceABNSync
-# BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
-BatchNorm2d = functools.partial(InPlaceABN, activation='identity')
+BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 
 def INF(B,H,W):
      return -torch.diag(torch.tensor(float("inf")).cuda().repeat(H),0).unsqueeze(0).repeat(B*W,1,1)

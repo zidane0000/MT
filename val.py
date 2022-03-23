@@ -156,6 +156,10 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
 
             np_predict_depth = np_predict_depth[0]
             cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
+            
+            heat_predict_depth = (np_predict_depth * 255).astype('uint8')
+            heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
+            cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
 
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)

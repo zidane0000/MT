@@ -28,7 +28,7 @@ class MTmodel(nn.Module):
         # Semantic
         # self.recurrence = 2 # For 2 loop in RRCAModule
         # self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
-        # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, self.num_classes)
+        # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
         self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
 
         # Depth

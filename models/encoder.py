@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import functools
 
-from inplace_abn import InPlaceABN
-BatchNorm2d = functools.partial(InPlaceABN, activation='identity')
+from inplace_abn import InPlaceABN, InPlaceABNSync
+BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 
 
 class Bottleneck(nn.Module):

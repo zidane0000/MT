@@ -11,8 +11,8 @@ from easydict import EasyDict
 # https://blog.csdn.net/jqc8438/article/details/109984113
 if torch.__version__.startswith('0'):
     from inplace_abn import InPlaceABN, InPlaceABNSync    
-    BatchNorm2d = functools.partial(InPlaceABN, activation='identity') # functools.partial(InPlaceABNSync, activation='identity')
-    BatchNorm2d_class = InPlaceABN # InPlaceABNSync
+    BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
+    BatchNorm2d_class = InPlaceABNSync
     relu_inplace = False
 else:
     BatchNorm2d_class = BatchNorm2d = torch.nn.SyncBatchNorm

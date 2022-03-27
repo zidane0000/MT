@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 # Inherit from CCNet
-def id2trainId(label, reverse=False):
+def id2trainId(label, reverse=False, classes=19):
     ignore_label = 255
     id_to_trainid={-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
                     3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,
@@ -26,6 +26,22 @@ def id2trainId(label, reverse=False):
     else:
         for k, v in id_to_trainid.items():
             label_copy[label == k] = v
+    
+    unique_values = np.unique(label_copy)
+    unique_values = unique_values[unique_values != ignore_label] # ignore specific label
+    max_val = max(unique_values)
+    min_val = min(unique_values)
+    if max_val > (classes - 1) or min_val < 0:
+        LOGGER.info('Labels can take value between 0 and number of classes {}.'.format(classes-1))
+        LOGGER.info('You have following values as class labels:')
+        LOGGER.info(unique_values)
+        if max_val > (classes - 1):
+            LOGGER.info("max_val {} > classes {}".format(max_val, classes))
+        if min_val < 0:
+            LOGGER.info("min_val {} <".format(min_val))
+        LOGGER.info('Exiting!!')
+        exit()
+        
     return label_copy
 
 
@@ -131,6 +147,67 @@ def select_device(device='', batch_size=None, newline=True):
         LOGGER.info('Find CPU')
 
     return torch.device('cuda:0' if cuda else 'cpu')
+
+
+def reduce_tensor(inp):
+    """
+    Reduce the loss from all processes so that 
+    process with rank 0 has the averaged results.
+    """
+    world_size = 1 if not torch.distributed.is_initialized() else torch.distributed.get_world_size()
+    if world_size < 2:
+        return inp
+    with torch.no_grad():
+        reduced_inp = inp
+        torch.distributed.reduce(reduced_inp, dst=0)
+    return reduced_inp / world_size
+
+
+# Inhert from ESPNetv2, where adapted from https://github.com/shelhamer/fcn.berkeleyvision.org/blob/master/score.py
+class iouEval:
+    def __init__(self, nClasses):
+        self.nClasses = nClasses
+        self.reset()
+
+    def reset(self):
+        self.overall_acc = 0
+        self.per_class_acc = np.zeros(self.nClasses, dtype=np.float32)
+        self.per_class_iu = np.zeros(self.nClasses, dtype=np.float32)
+        self.mIOU = 0
+        self.batchCount = 0
+
+    def fast_hist(self, a, b):
+        k = (a >= 0) & (a < self.nClasses)
+        return np.bincount(self.nClasses * a[k].astype(int) + b[k], minlength=self.nClasses ** 2).reshape(self.nClasses, self.nClasses)
+
+    def compute_hist(self, predict, gth):
+        hist = self.fast_hist(gth, predict)
+        return hist
+
+    def addBatch(self, predict, gth):
+        predict = predict.cpu().numpy().flatten()
+        gth = gth.cpu().numpy().flatten()
+
+        epsilon = 0.00000001
+        hist = self.compute_hist(predict, gth)
+        overall_acc = np.diag(hist).sum() / (hist.sum() + epsilon)
+        per_class_acc = np.diag(hist) / (hist.sum(1) + epsilon)
+        per_class_iu = np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist) + epsilon)
+        mIou = np.nanmean(per_class_iu)
+
+        self.overall_acc +=overall_acc
+        self.per_class_acc += per_class_acc
+        self.per_class_iu += per_class_iu
+        self.mIOU += mIou
+        self.batchCount += 1
+
+    def getMetric(self):
+        overall_acc = self.overall_acc/self.batchCount
+        per_class_acc = self.per_class_acc / self.batchCount
+        per_class_iu = self.per_class_iu / self.batchCount
+        mIOU = self.mIOU / self.batchCount
+
+        return overall_acc, per_class_acc, per_class_iu, mIOU
 
 
 if __name__ == '__main__':

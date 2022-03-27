@@ -26,10 +26,10 @@ class MTmodel(nn.Module):
         self.encoder = encoder(params)
 
         # Semantic
-        # self.recurrence = 2 # For 2 loop in RRCAModule
-        # self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
+        self.recurrence = 2 # For 2 loop in RRCAModule
+        self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
         # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
-        self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
+        # self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
 
         # Depth
         bts_size = 512
@@ -39,8 +39,8 @@ class MTmodel(nn.Module):
         feature_maps = self.encoder(x) # five feature maps
         
         res = []
-        res.append(self.semantic_decoder(feature_maps[-4:]))
-        # res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
+        res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
+        # res.append(self.semantic_decoder(feature_maps[-4:]))
 
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)
         res.append(final_depth)

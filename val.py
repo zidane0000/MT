@@ -8,7 +8,7 @@ from pathlib import Path
 
 from models.mt import MTmodel
 from utils.loss import ComputeLoss
-from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, iouEvalVal
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -16,8 +16,8 @@ def compute_ccnet_eval(predicts, ground_truths, class_num=19):
     def get_confusion_matrix(pred_label, gt_label, class_num):
         """
         Calcute the confusion matrix by given label and pred
-        :param gt_label: the ground truth label
         :param pred_label: the pred label
+        :param gt_label: the ground truth label        
         :param class_num: the numnber of class
         :return: the confusion matrix
         """
@@ -35,17 +35,20 @@ def compute_ccnet_eval(predicts, ground_truths, class_num=19):
     for i in range(len(predicts)):
         ignore_index = ground_truths[i] != 255
         predict_mask = predicts[i][ignore_index]
-        ground_truth_maks = ground_truths[i][ignore_index]
-        confusion_matrix += get_confusion_matrix(predict_mask, ground_truth_maks, class_num)
-
-    # confusion_matrix = confusion_matrix.mean()
+        ground_truth_mask = ground_truths[i][ignore_index]
+        confusion_matrix += get_confusion_matrix(predict_mask, ground_truth_mask, class_num)
+    
+    if torch.distributed.is_initialized():
+        confusion_matrix = torch.from_numpy(confusion_matrix).cuda()
+        reduced_confusion_matrix = reduce_tensor(confusion_matrix)
+        confusion_matrix = reduced_confusion_matrix.cpu().numpy()
     pos = confusion_matrix.sum(1)
     res = confusion_matrix.sum(0)
     tp = np.diag(confusion_matrix)
 
-    IU_array = (tp / np.maximum(1.0, pos + res - tp))
-    mean_IU = IU_array.mean()
-    return mean_IU, IU_array
+    IoU_array = (tp / np.maximum(1.0, pos + res - tp))
+    mean_IoU = IoU_array.mean()
+    return mean_IoU, IoU_array
 
 
 def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
@@ -84,7 +87,7 @@ def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
     return silog.mean(), abs_rel.mean(), log10.mean(), rmse.mean(), sq_rel.mean(), rmse_log.mean(), d1.mean(), d2.mean(), d3.mean()
 
 
-def val(params, save_dir=None, model=None, device=None, compute_loss=None):
+def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_loader=None):
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
         LOGGER.info("saving to " + str(save_dir))
@@ -106,7 +109,8 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
     model.eval()
 
     # Dataset, DataLoader
-    val_dataset, val_loader = Create_Cityscapes(params, mode='val')
+    if val_loader == None:
+        val_dataset, val_loader = Create_Cityscapes(params, mode='val')
 
     val_bar = enumerate(val_loader)
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
@@ -114,7 +118,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
     # val result
     mean_loss = torch.zeros(2, device=device)
     smnt_mean_iou_val = 0
-    smnt_iou_array_val = np.zeros((19,19))
+    smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
@@ -176,6 +180,99 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None):
 
     if compute_loss:
         return (mean_loss[0], mean_loss[1]), (smnt_mean_iou_val, smnt_iou_array_val), depth_val
+    else:
+        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
+    
+
+def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
+    if task is None:
+        LOGGER.info("No define Task")
+        return None
+    
+    if save_dir is None:
+        save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
+        LOGGER.info("saving to " + str(save_dir))
+
+    if model is None:        
+        device = select_device(params.device)
+        LOGGER.info("begin load model with ckpt...")
+        ckpt = torch.load(params.weight)
+        model = MTmodel(params)
+        if device != 'cpu' and torch.cuda.device_count() > 1:
+            LOGGER.info("use multi-gpu, device=" + params.device)
+            device_ids = [int(i) for i in params.device.split(',')]
+            model = torch.nn.DataParallel(model, device_ids = device_ids)
+
+        # if pt is save from multi-gpu, model need para first, see https://blog.csdn.net/qq_32998593/article/details/89343507
+        model.load_state_dict(ckpt['model'])
+        model.to(device)
+        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")        
+    model.eval()
+
+    # Dataset, DataLoader
+    if val_loader == None:
+        val_dataset, val_loader = Create_Cityscapes(params, mode='val')
+
+    val_bar = enumerate(val_loader)
+    val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+    
+    # val result
+    mean_loss = torch.zeros(1, device=device)
+    smnt_mean_iou_val = 0
+    smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
+    depth_val = np.zeros(9)    
+    iouEvalVal = iouEval(params.classes)
+
+    for i, item in val_bar:
+        img, (smnt, depth) = item
+        img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+        
+        if task == "depth":
+            gt = depth.to(device)
+        elif task == "smnt":
+            gt = smnt.to(device)
+        else:
+            gt = None
+
+        with torch.no_grad():
+            output = model(img)
+
+        if compute_loss:
+            loss = compute_loss(output, gt)
+            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+            mean_loss = (mean_loss * i + loss) / (i + 1)
+            val_bar.set_description((' '*16 + 'mem:%8s' + '  loss:%6.6g') % (mem, mean_loss))
+
+        # upsample to origin size
+        if task == "smnt":
+            interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
+            predict_smnt = interp(output)
+
+            np_predict_smnt = predict_smnt.cpu().numpy()
+            np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
+            np_gt_smnt= smnt.cpu().numpy()
+            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt)
+            smnt_mean_iou_val += miou
+            smnt_iou_array_val += iou_array
+        elif task == "depth":
+            np_predict_depth = output.cpu().numpy().squeeze().astype(np.float32)
+            np_gt_depth = depth.cpu().numpy().astype(np.float32)
+            depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))          
+    
+    smnt_mean_iou_val /= len(val_bar)
+    smnt_iou_array_val /= len(val_bar)
+    depth_val /= len(val_bar)
+    
+    if task== "smnt":
+        LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
+    elif task == "depth":
+        depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
+        for i in range(len(depth_val_str)):
+            LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
+    LOGGER.info('-'*45)
+
+    if compute_loss:
+        return mean_loss, (smnt_mean_iou_val, smnt_iou_array_val), depth_val
     else:
         return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
 

@@ -39,7 +39,7 @@ def train(params):
 
     # Model
     LOGGER.info("begin to bulid up model...")
-    model = OneModel(classes=19).to(device)
+    model = OneModel(classes=params.num_classes).to(device)
     LOGGER.info("load model to device")
 
     # Optimizer

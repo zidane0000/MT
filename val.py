@@ -12,7 +12,7 @@ from utils.general import increment_path, select_device, id2trainId, put_palette
 from utils.cityscapes import Create_Cityscapes
 
 
-def compute_ccnet_eval(predicts, ground_truths, class_num=19):
+def compute_ccnet_eval(predicts, ground_truths, class_num):
     def get_confusion_matrix(pred_label, gt_label, class_num):
         """
         Calcute the confusion matrix by given label and pred

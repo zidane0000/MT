@@ -8,7 +8,7 @@ from pathlib import Path
 
 from models.mt import MTmodel
 from utils.loss import ComputeLoss
-from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, iouEvalVal
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -145,7 +145,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         np_predict_smnt = predict_smnt.cpu().numpy()
         np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
         np_gt_smnt= smnt.cpu().numpy()
-        miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt)
+        miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
         smnt_mean_iou_val += miou
         smnt_iou_array_val += iou_array
 
@@ -206,7 +206,7 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
         # if pt is save from multi-gpu, model need para first, see https://blog.csdn.net/qq_32998593/article/details/89343507
         model.load_state_dict(ckpt['model'])
         model.to(device)
-        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")        
+        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")
     model.eval()
 
     # Dataset, DataLoader
@@ -220,8 +220,7 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
     mean_loss = torch.zeros(1, device=device)
     smnt_mean_iou_val = 0
     smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
-    depth_val = np.zeros(9)    
-    iouEvalVal = iouEval(params.classes)
+    depth_val = np.zeros(9)
 
     for i, item in val_bar:
         img, (smnt, depth) = item
@@ -251,13 +250,13 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
             np_predict_smnt = predict_smnt.cpu().numpy()
             np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
             np_gt_smnt= smnt.cpu().numpy()
-            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt)
+            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
             smnt_mean_iou_val += miou
-            smnt_iou_array_val += iou_array
+            smnt_iou_array_val += iou_array            
         elif task == "depth":
             np_predict_depth = output.cpu().numpy().squeeze().astype(np.float32)
             np_gt_depth = depth.cpu().numpy().astype(np.float32)
-            depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))          
+            depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
     
     smnt_mean_iou_val /= len(val_bar)
     smnt_iou_array_val /= len(val_bar)

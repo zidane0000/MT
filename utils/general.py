@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 # Inherit from CCNet
-def id2trainId(label, reverse=False, classes):
+def id2trainId(label, classes, reverse=False):
     ignore_label = 255
     id_to_trainid={-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
                     3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,
@@ -164,6 +164,7 @@ def reduce_tensor(inp):
 
 
 # Inhert from ESPNetv2, where adapted from https://github.com/shelhamer/fcn.berkeleyvision.org/blob/master/score.py
+# IOU result same as compute_ccnet_eval
 class iouEval:
     def __init__(self, nClasses):
         self.nClasses = nClasses
@@ -185,8 +186,12 @@ class iouEval:
         return hist
 
     def addBatch(self, predict, gth):
-        predict = predict.cpu().numpy().flatten()
-        gth = gth.cpu().numpy().flatten()
+        if type(predict) is torch.Tensor:
+            predict = predict.cpu().numpy()
+        if type(gth) is torch.Tensor:
+            gth = gth.cpu().numpy()
+        predict = predict.flatten()
+        gth = gth.flatten()
 
         epsilon = 0.00000001
         hist = self.compute_hist(predict, gth)

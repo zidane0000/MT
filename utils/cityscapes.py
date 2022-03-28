@@ -30,6 +30,7 @@ class Cityscapes(Dataset):
             root: str,
             input_height: int,
             input_width: int,
+            num_classes: int,
             split: str = "train",
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
@@ -41,6 +42,7 @@ class Cityscapes(Dataset):
         self.root = root
         self.transform = transform
         self.height, self.width = input_height, input_width
+        self.num_classes = num_classes
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
@@ -116,7 +118,7 @@ class Cityscapes(Dataset):
             target = cv2.imread(self.targets[index][i], cv2.IMREAD_GRAYSCALE)
 
             if t == 'semantic':
-                target = id2trainId(target)
+                target = id2trainId(target, self.num_classes)
             targets.append(target)
 
         target = list(targets) if len(targets) > 1 else targets[0]
@@ -180,6 +182,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
     dataset = Cityscapes(params.root, 
                         input_height=input_height, 
                         input_width=input_width, 
+                        num_classes=params.num_classes,
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity'],

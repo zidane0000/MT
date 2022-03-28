@@ -113,7 +113,7 @@ class Bottleneck(nn.Module):
 
 class CCNet(nn.Module):
     # part of CCNet
-    def __init__(self, inplanes=128, block=Bottleneck, layers=[3, 4, 23, 3], num_classes, recurrence=0):
+    def __init__(self, num_classes, inplanes=128, block=Bottleneck, layers=[3, 4, 23, 3], recurrence=0):
         super(CCNet, self).__init__()
         self.inplanes = inplanes
         self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=4, multi_grid=(1,1,1))

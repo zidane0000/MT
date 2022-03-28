@@ -93,13 +93,13 @@ def train(params):
     depth_val_loss_history = []
 
     for epoch in range(epochs):
-        if RANK != -1: # progress 0
+        if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
             
         # Train
         model.train()
         pbar = enumerate(train_loader)
-        if RANK in [-1, 0]: # progress 0
+        if RANK in [-1, 0]: # Process 0
             pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar        
 
         # mean loss
@@ -115,20 +115,20 @@ def train(params):
             output = model(img)
             loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
             
-            if RANK != -1: # progress 0
+            if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
             loss.backward()
             optimizer.step()
 
             # Log
-            if RANK in [-1, 0]: # progress 0
+            if RANK in [-1, 0]: # Process 0
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
                 pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
                         f'{epoch}/{epochs - 1}', mem, mean_loss[0], mean_loss[1]))        
         scheduler.step()
         
-        if RANK in [-1, 0]: # progress 0
+        if RANK in [-1, 0]: # Process 0
             # Test
             (smnt_val_loss, depth_val_loss), _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
             
@@ -145,12 +145,13 @@ def train(params):
                 torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
                 del ckpt
     
-    plt.plot(range(epochs), smnt_loss_history)
-    plt.plot(range(epochs), depth_loss_history)
-    plt.plot(range(epochs), smnt_val_loss_history)
-    plt.plot(range(epochs), depth_val_loss_history)
-    plt.legend(['semantic','depth','semantic(val)','depth(val)'])
-    plt.savefig(save_dir / 'history.png')
+    if RANK in [-1, 0]: # Process 0
+        plt.plot(range(epochs), smnt_loss_history)
+        plt.plot(range(epochs), depth_loss_history)
+        plt.plot(range(epochs), smnt_val_loss_history)
+        plt.plot(range(epochs), depth_val_loss_history)
+        plt.legend(['semantic','depth','semantic(val)','depth(val)'])
+        plt.savefig(save_dir / 'history.png')
 
 
 if __name__ == '__main__':

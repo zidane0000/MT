@@ -9,14 +9,19 @@ from torch.nn import Softmax
 from easydict import EasyDict
 
 # https://blog.csdn.net/jqc8438/article/details/109984113
-if torch.__version__.startswith('0'):
-    from inplace_abn import InPlaceABN, InPlaceABNSync    
-    BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
-    BatchNorm2d_class = InPlaceABNSync
-    relu_inplace = False
-else:
-    BatchNorm2d_class = BatchNorm2d = torch.nn.SyncBatchNorm
-    relu_inplace = True
+from inplace_abn import InPlaceABN, InPlaceABNSync    
+BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
+BatchNorm2d_class = InPlaceABNSync
+relu_inplace = False
+    
+# if torch.__version__.startswith('0'):
+#    from inplace_abn import InPlaceABN, InPlaceABNSync    
+#    BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
+#    BatchNorm2d_class = InPlaceABNSync
+#    relu_inplace = False
+# else:
+#    BatchNorm2d_class = BatchNorm2d = torch.nn.SyncBatchNorm # SyncBatchNorm need init_process_group first
+#    relu_inplace = True
 
 ALIGN_CORNERS = True
 BN_MOMENTUM = 0.1
@@ -689,13 +694,12 @@ class HighResolutionNet(nn.Module):
         feats = self.ocr_distri_head(feats, context)
 
         out = self.cls_head(feats) # [Batch_size, 19, H/4, W/4]
-        
-        print(out_aux.shape)
-        print(out.shape)
-        out_aux_seg.append(out_aux)
-        out_aux_seg.append(out)
+        return out
+    
+        # out_aux_seg.append(out_aux)
+        # out_aux_seg.append(out)
 
-        return out_aux_seg
+        # return out_aux_seg
 
     def init_weights(self, pretrained='',):
         print('=> init weights from normal distribution')

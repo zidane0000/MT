@@ -17,8 +17,9 @@ from tqdm import tqdm
 from val import val_one as val
 from utils.cityscapes import Create_Cityscapes
 from utils.general import one_cycle, increment_path, select_device, LOGGER
-from utils.loss import CriterionDSN as ComputeLoss
-from models.decoder.espnet import ESPNet as OneModel
+from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
+# from models.decoder.espnet import ESPNet as OneModel
+from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -39,7 +40,7 @@ def train(params):
 
     # Model
     LOGGER.info("begin to bulid up model...")
-    model = OneModel(classes=params.num_classes).to(device)
+    model = OneModel(cfg).to(device)
     LOGGER.info("load model to device")
 
     # Optimizer
@@ -94,7 +95,13 @@ def train(params):
         pbar = enumerate(train_loader)
         if RANK in [-1, 0]: # Process 0
             pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar        
-
+        
+        # current learning rate
+        lr = 0
+        for param_group in optimizer.param_groups:
+            lr = param_group['lr']
+        LOGGER.info("Learning rate : " +  str(lr))
+        
         # mean loss
         mean_loss = torch.zeros(1, device=device)
         for i, item in pbar:

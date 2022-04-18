@@ -6,8 +6,8 @@ import functools
 from inplace_abn import InPlaceABN, InPlaceABNSync
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 
-def INF(B,H,W):
-     return -torch.diag(torch.tensor(float("inf")).cuda().repeat(H),0).unsqueeze(0).repeat(B*W,1,1)
+def INF(B,H,W,device='cpu'):
+     return -torch.diag(torch.tensor(float("inf")).to(device).repeat(H),0).unsqueeze(0).repeat(B*W,1,1)
 
 
 class CrissCrossAttention(nn.Module):
@@ -33,7 +33,7 @@ class CrissCrossAttention(nn.Module):
         proj_value = self.value_conv(x)
         proj_value_H = proj_value.permute(0,3,1,2).contiguous().view(m_batchsize*width,-1,height)
         proj_value_W = proj_value.permute(0,2,1,3).contiguous().view(m_batchsize*height,-1,width)
-        energy_H = (torch.bmm(proj_query_H, proj_key_H)+self.INF(m_batchsize, height, width)).view(m_batchsize,width,height,height).permute(0,2,1,3).contiguous()
+        energy_H = (torch.bmm(proj_query_H, proj_key_H)+self.INF(m_batchsize, height, width, device=proj_query_H.device)).view(m_batchsize,width,height,height).permute(0,2,1,3).contiguous()
         energy_W = torch.bmm(proj_query_W, proj_key_W).view(m_batchsize,height,width,width)
         concate = self.softmax(torch.cat([energy_H, energy_W], 3))
 

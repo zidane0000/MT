@@ -6,6 +6,7 @@ import random
 import torch
 import numpy as np
 
+from tqdm import tqdm
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
@@ -92,14 +93,15 @@ class Cityscapes(Dataset):
             img_dir = os.path.join(self.images_dir, city)
             target_dir = os.path.join(self.targets_dir, city)
             for file_name in os.listdir(img_dir):
-                target_types = []
-                for t in self.target_type:
-                    target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                 self._get_target_suffix(self.mode, t))
-                    target_types.append(os.path.join(target_dir, target_name))
-                    
-                self.images.append(os.path.join(img_dir, file_name))
-                self.targets.append(target_types)
+                if file_name.find('.png') > -1: # Only accept png file
+                    target_types = []
+                    for t in self.target_type:
+                        target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
+                                                     self._get_target_suffix(self.mode, t))
+                        target_types.append(os.path.join(target_dir, target_name))
+
+                    self.images.append(os.path.join(img_dir, file_name))
+                    self.targets.append(target_types)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -116,6 +118,7 @@ class Cityscapes(Dataset):
         for i, t in enumerate(self.target_type):
             # target = Image.open(self.targets[index][i])
             target = cv2.imread(self.targets[index][i], cv2.IMREAD_GRAYSCALE)
+            assert target is not None, f'Target {t} Not Found {self.targets[index][i]}'
 
             if t == 'semantic':
                 target = id2trainId(target, self.num_classes)
@@ -138,14 +141,7 @@ class Cityscapes(Dataset):
         image = np.moveaxis(image, -1, 0)
 
         for i in range(len(target)):
-            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        
-        # cv2.imshow('image',image.transpose(1,2,0))
-        # np_predict_smnt = id2trainId(target[0], reverse=True)
-        # np_predict_smnt = put_palette(np_predict_smnt, num_classes=255)
-        # cv2.imshow('smnt', np_predict_smnt)
-        # cv2.imshow('depth', target[1])
-        # cv2.waitKey()
+            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)       
         
         return image, target
 
@@ -229,27 +225,29 @@ if __name__ == '__main__':
     parser.add_argument('--input_width',    type=int, help='input width',  default=640)
     parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
+    # Semantic Segmentation
+    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+
+    # Depth Estimation
+    parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
+    parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
     params = parser.parse_args()
-    train_dataset, train_loader = Create_Cityscapes(params, mode='train')
+    train_dataset, train_loader = Create_Cityscapes(params, mode='val')
 
-    for i, item in enumerate(train_loader):
+    pbar = tqdm(train_loader, total=len(train_loader))
+    for i, item in enumerate(pbar):
         img, (smnt, depth) = item
-        print(img.shape)
-        print(smnt.shape)
-        print(depth.shape)
         
-        np_smnt = smnt[0].cpu().numpy()
-        np_smnt = id2trainId(np_smnt, reverse=True)
-        np_smnt = put_palette(np_smnt, num_classes=255, path='smnt.jpg')
+#         np_smnt = smnt[0].cpu().numpy()
+#         np_smnt = id2trainId(np_smnt, 255, reverse=True)
+#         np_smnt = put_palette(np_smnt, num_classes=255, path='smnt.jpg')
         
-        np_depth = depth[0].cpu().numpy()
-        cv2.imwrite('depth.jpg', np_depth)
+#         np_depth = depth[0].cpu().numpy()
+#         cv2.imwrite('depth.jpg', np_depth)
             
-        heat_depth = (np_depth * 255).astype('uint8')
-        heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
-        cv2.imwrite('heat.jpg', heat_depth)
+#         heat_depth = (np_depth * 255).astype('uint8')
+#         heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
+#         cv2.imwrite('heat.jpg', heat_depth)
 
-        np_img = (img[0]).cpu().numpy().transpose(1,2,0)
-        cv2.imwrite('img.jpg', np_img)
-        
-        input()
+#         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+#         cv2.imwrite('img.jpg', np_img)

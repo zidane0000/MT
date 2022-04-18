@@ -10,7 +10,7 @@ try:
     from .decoder.ccnet import CCNet, RCCAModule
     from .decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from .decoder.bts import bts
-    from .decoder.espent import ESPNet_Decoder
+    from .decoder.espnet import ESPNet_Decoder
 except:
     from encoder import encoder
     from decoder.ccnet import CCNet, RCCAModule
@@ -28,15 +28,17 @@ class MTmodel(nn.Module):
         self.encoder = encoder(params)
 
         # Semantic
-        self.semantic_head = params.semantic_head
-        if self.semantic_head == "CCNet":
+        self.semantic_head = params.semantic_head.lower()
+        if self.semantic_head == "ccnet":
             self.recurrence = 2 # For 2 loop in RRCAModule
             self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
             # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
-        elif self.semantic_head == "HRNet":
+        elif self.semantic_head == "hrnet":
             self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
-        elif self.semantic_head == "ESPNet":
+        elif self.semantic_head == "espnet":
             self.semantic_decoder= ESPNet_Decoder(classes=params.num_classes, input_channels=self.encoder.feat_out_channels[:3])
+        else:
+            raise Exception(f'ERROR: Unkown Semnatic head {self.semantic_head}')
 
         # Depth
         bts_size = 512
@@ -46,11 +48,11 @@ class MTmodel(nn.Module):
         feature_maps = self.encoder(x) # five feature maps
         
         res = []
-        if self.semantic_head == "CCNet":
+        if self.semantic_head == "ccnet":
             res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
-        elif self.semantic_head == "HRNet":
+        elif self.semantic_head == "hrnet":
             res.append(self.semantic_decoder(feature_maps[-4:]))
-        elif self.semantic_head == "ESPNet":
+        elif self.semantic_head == "espnet":
             res.append(self.semantic_decoder(feature_maps[:3]))
 
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)

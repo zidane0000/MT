@@ -182,6 +182,7 @@ if __name__ == '__main__':
 
     # Semantic Segmentation
     parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)

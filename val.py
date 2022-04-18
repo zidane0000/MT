@@ -153,9 +153,13 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         np_gt_depth = depth.cpu().numpy().astype(np.float32)
         depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
                 
-        if params.plot:            
+        if params.plot:
+            np_gt_smnt = np_gt_smnt[0]
+            np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
+            np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
+            
             np_predict_smnt = np_predict_smnt[0]
-            np_predict_smnt = id2trainId(np_predict_smnt, reverse=True)
+            np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
             np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
 
             np_predict_depth = np_predict_depth[0]
@@ -164,6 +168,13 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             heat_predict_depth = (np_predict_depth * 255).astype('uint8')
             heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
             cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
+            
+            np_gt_depth = np_gt_depth[0]
+            cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
+            
+            heat_gt_depth = (np_gt_depth * 255).astype('uint8')
+            heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
+            cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
 
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
@@ -286,13 +297,17 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',       type=int, default=256, help='input height')
     parser.add_argument('--input_width',        type=int, default=512, help='input width')
-    parser.add_argument('--min_depth',     type=float, default=1e-3, help='minimum depth')
-    parser.add_argument('--max_depth',     type=float, default=80, help='maximum depth')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
+    # Semantic Segmentation
+    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+
+    # Depth Estimation
+    parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
+    parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
     params = parser.parse_args()
 
     val(params)

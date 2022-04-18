@@ -4,11 +4,12 @@ import torch.nn as nn
 
 from torchsummary import summary
 
+
 class CBR(nn.Module):
     '''
     This class defines the convolution layer with batch normalization and PReLU activation
     '''
-    def __init__(self, nIn, nOut, kSize, stride=1):
+    def __init__(self, nIn, nOut, kSize, stride=1, groups=1):
         '''
         :param nIn: number of input channels
         :param nOut: number of output channels
@@ -16,11 +17,9 @@ class CBR(nn.Module):
         :param stride: stride rate for down-sampling. Default is 1
         '''
         super().__init__()
-        padding = int((kSize - 1)/2)
-        #self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False)
-        self.conv = nn.Conv2d(nIn, nOut, (kSize, kSize), stride=stride, padding=(padding, padding), bias=False)
-        #self.conv1 = nn.Conv2d(nOut, nOut, (1, kSize), stride=1, padding=(0, padding), bias=False)
-        self.bn = nn.BatchNorm2d(nOut, eps=1e-03)
+        padding = int((kSize - 1) / 2)
+        self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False, groups=groups)
+        self.bn = nn.BatchNorm2d(nOut)
         self.act = nn.PReLU(nOut)
 
     def forward(self, input):
@@ -29,7 +28,7 @@ class CBR(nn.Module):
         :return: transformed feature map
         '''
         output = self.conv(input)
-        #output = self.conv1(output)
+        # output = self.conv1(output)
         output = self.bn(output)
         output = self.act(output)
         return output
@@ -44,7 +43,7 @@ class BR(nn.Module):
         :param nOut: output feature maps
         '''
         super().__init__()
-        self.bn = nn.BatchNorm2d(nOut, eps=1e-03)
+        self.bn = nn.BatchNorm2d(nOut)
         self.act = nn.PReLU(nOut)
 
     def forward(self, input):
@@ -56,12 +55,12 @@ class BR(nn.Module):
         output = self.act(output)
         return output
 
-    
+
 class CB(nn.Module):
     '''
        This class groups the convolution and batch normalization
     '''
-    def __init__(self, nIn, nOut, kSize, stride=1):
+    def __init__(self, nIn, nOut, kSize, stride=1, groups=1):
         '''
         :param nIn: number of input channels
         :param nOut: number of output channels
@@ -69,9 +68,10 @@ class CB(nn.Module):
         :param stride: optinal stide for down-sampling
         '''
         super().__init__()
-        padding = int((kSize - 1)/2)
-        self.conv = nn.Conv2d(nIn, nOut, (kSize, kSize), stride=stride, padding=(padding, padding), bias=False)
-        self.bn = nn.BatchNorm2d(nOut, eps=1e-03)
+        padding = int((kSize - 1) / 2)
+        self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False,
+                              groups=groups)
+        self.bn = nn.BatchNorm2d(nOut)
 
     def forward(self, input):
         '''
@@ -82,12 +82,12 @@ class CB(nn.Module):
         output = self.bn(output)
         return output
 
-    
+
 class C(nn.Module):
     '''
     This class is for a convolutional layer.
     '''
-    def __init__(self, nIn, nOut, kSize, stride=1):
+    def __init__(self, nIn, nOut, kSize, stride=1, groups=1):
         '''
         :param nIn: number of input channels
         :param nOut: number of output channels
@@ -95,8 +95,9 @@ class C(nn.Module):
         :param stride: optional stride rate for down-sampling
         '''
         super().__init__()
-        padding = int((kSize - 1)/2)
-        self.conv = nn.Conv2d(nIn, nOut, (kSize, kSize), stride=stride, padding=(padding, padding), bias=False)
+        padding = int((kSize - 1) / 2)
+        self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False,
+                              groups=groups)
 
     def forward(self, input):
         '''
@@ -106,12 +107,12 @@ class C(nn.Module):
         output = self.conv(input)
         return output
 
-    
+
 class CDilated(nn.Module):
     '''
     This class defines the dilated convolution.
     '''
-    def __init__(self, nIn, nOut, kSize, stride=1, d=1):
+    def __init__(self, nIn, nOut, kSize, stride=1, d=1, groups=1):
         '''
         :param nIn: number of input channels
         :param nOut: number of output channels
@@ -120,8 +121,9 @@ class CDilated(nn.Module):
         :param d: optional dilation rate
         '''
         super().__init__()
-        padding = int((kSize - 1)/2) * d
-        self.conv = nn.Conv2d(nIn, nOut, (kSize, kSize), stride=stride, padding=(padding, padding), bias=False, dilation=d)
+        padding = int((kSize - 1) / 2) * d
+        self.conv = nn.Conv2d(nIn, nOut,kSize, stride=stride, padding=padding, bias=False,
+                              dilation=d, groups=groups)
 
     def forward(self, input):
         '''
@@ -130,6 +132,31 @@ class CDilated(nn.Module):
         '''
         output = self.conv(input)
         return output
+
+class CDilatedB(nn.Module):
+    '''
+    This class defines the dilated convolution with batch normalization.
+    '''
+    def __init__(self, nIn, nOut, kSize, stride=1, d=1, groups=1):
+        '''
+        :param nIn: number of input channels
+        :param nOut: number of output channels
+        :param kSize: kernel size
+        :param stride: optional stride rate for down-sampling
+        :param d: optional dilation rate
+        '''
+        super().__init__()
+        padding = int((kSize - 1) / 2) * d
+        self.conv = nn.Conv2d(nIn, nOut,kSize, stride=stride, padding=padding, bias=False,
+                              dilation=d, groups=groups)
+        self.bn = nn.BatchNorm2d(nOut)
+
+    def forward(self, input):
+        '''
+        :param input: input feature map
+        :return: transformed feature map
+        '''
+        return self.bn(self.conv(input))
 
     
 class DownSamplerB(nn.Module):
@@ -258,17 +285,22 @@ class ESPNet_Encoder(nn.Module):
         :param q: depth multiplier
         '''
         super().__init__()
+        self.feat_out_channels = []
+        
         self.level1 = CBR(3, 16, 3, 2)
         self.sample1 = InputProjectionA(1)
         self.sample2 = InputProjectionA(2)
 
         self.b1 = BR(16 + 3)
+        self.feat_out_channels.append(16 + 3)
+        
         self.level2_0 = DownSamplerB(16 +3, 64)
 
         self.level2 = nn.ModuleList()
         for i in range(0, p):
             self.level2.append(DilatedParllelResidualBlockB(64 , 64))
         self.b2 = BR(128 + 3)
+        self.feat_out_channels.append(128 + 3)
 
         self.level3_0 = DownSamplerB(128 + 3, 128)
         self.level3 = nn.ModuleList()
@@ -277,6 +309,7 @@ class ESPNet_Encoder(nn.Module):
         self.b3 = BR(256)
 
         self.classifier = C(256, classes, 1, 1)
+        self.feat_out_channels.append(classes)
 
     def forward(self, input):
         '''
@@ -307,9 +340,9 @@ class ESPNet_Encoder(nn.Module):
 
         output2_cat = self.b3(torch.cat([output2_0, output2], 1))
 
-        classifier = self.classifier(output2_cat)
+        encoder_classifier = self.classifier(output2_cat)
 
-        return classifier
+        return output0_cat, output1_cat, encoder_classifier
         
 class ESPNet(nn.Module):
     '''
@@ -347,32 +380,9 @@ class ESPNet(nn.Module):
         '''
         :param input: RGB image
         :return: transformed feature map
-        '''
-        output0 = self.encoder.level1(input)
-        inp1 = self.encoder.sample1(input)
-        inp2 = self.encoder.sample2(input)
-
-        output0_cat = self.encoder.b1(torch.cat([output0, inp1], 1))
-        output1_0 = self.encoder.level2_0(output0_cat)  # down-sampled
-
-        for i, layer in enumerate(self.encoder.level2):
-            if i == 0:
-                output1 = layer(output1_0)
-            else:
-                output1 = layer(output1)
-
-        output1_cat = self.encoder.b2(torch.cat([output1, output1_0, inp2], 1))
-
-        output2_0 = self.encoder.level3_0(output1_cat)  # down-sampled
-        for i, layer in enumerate(self.encoder.level3):
-            if i == 0:
-                output2 = layer(output2_0)
-            else:
-                output2 = layer(output2)
-
-        output2_cat = self.encoder.b3(torch.cat([output2_0, output2], 1)) # concatenate for feature map width expansion
-
-        output2_c = self.up_l3(self.br(self.encoder.classifier(output2_cat))) #RUM
+        '''        
+        output0_cat, output1_cat, encoder_classifier = self.encoder(input)
+        output2_c = self.up_l3(self.br(encoder_classifier)) #RUM
 
         output1_C = self.level3_C(output1_cat) # project to C-dimensional space
         comb_l2_l3 = self.up_l2(self.combine_l2_l3(torch.cat([output1_C, output2_c], 1))) #RUM
@@ -380,11 +390,65 @@ class ESPNet(nn.Module):
         concat_features = self.conv(torch.cat([comb_l2_l3, output0_cat], 1))
 
         classifier = self.classifier(concat_features)
+        return classifier
+    
+
+class ESPNet_Decoder(nn.Module):
+    '''
+    This class defines the ESPNet network
+    '''
+
+    def __init__(self, classes=20, p=2, q=3, input_channels=[]):
+        '''
+        :param classes: number of classes in the dataset. Default is 20 for the cityscapes
+        :param p: depth multiplier
+        :param q: depth multiplier
+        :param encoderFile: pretrained encoder weights. Recall that we first trained the ESPNet-C and then attached the
+                            RUM-based light weight decoder. See paper for more details.
+        '''
+        super().__init__()
+        
+        # light-weight decoder
+        self.level3_C = C(input_channels[1], classes, 1, 1)
+        self.br = nn.BatchNorm2d(input_channels[2], eps=1e-03)
+        self.conv = CBR(input_channels[0] + classes, classes, 3, 1)
+
+        self.up_l3 = nn.Sequential(nn.ConvTranspose2d(input_channels[2], classes, 2, stride=2, padding=0, output_padding=0, bias=False))
+        self.combine_l2_l3 = nn.Sequential(BR(2*classes), DilatedParllelResidualBlockB(2*classes , classes, add=False))
+
+        self.up_l2 = nn.Sequential(nn.ConvTranspose2d(classes, classes, 2, stride=2, padding=0, output_padding=0, bias=False), BR(classes))
+
+        self.classifier = nn.ConvTranspose2d(classes, classes, 2, stride=2, padding=0, output_padding=0, bias=False)
+
+    def forward(self, input):
+        '''
+        :param input: RGB image
+        :return: transformed feature map
+        '''
+        output0_cat, output1_cat, encoder_classifier = input
+        output2_c = self.up_l3(self.br(encoder_classifier)) #RUM
+
+        output1_C = self.level3_C(output1_cat) # project to C-dimensional space
+        comb_l2_l3 = self.up_l2(self.combine_l2_l3(torch.cat([output1_C, output2_c], 1))) #RUM
+        
+        concat_features = self.conv(torch.cat([comb_l2_l3, output0_cat], 1))
+
+        classifier = self.classifier(concat_features)
         return classifier 
 
+    
 if __name__ == '__main__':
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     model = ESPNet(classes=19).to(device)
+    encoder = ESPNet_Encoder(classes=19).to(device)
+    decoder = ESPNet_Decoder(classes=19, input_channels=encoder.feat_out_channels).to(device)
     print("load model to device")
     
-    summary(model, (3, 32, 32))
+    ran = torch.rand((4, 3, 64, 64)).to(device)
+    output = model.forward(ran)
+    
+    encoder_output = encoder(ran)
+    result = decoder(encoder_output)
+    
+    print("pass")
+    summary(model, (3, 32, 32), device=device)

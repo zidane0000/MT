@@ -10,11 +10,13 @@ try:
     from .decoder.ccnet import CCNet, RCCAModule
     from .decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from .decoder.bts import bts
+    from .decoder.espent import ESPNet_Decoder
 except:
     from encoder import encoder
     from decoder.ccnet import CCNet, RCCAModule
     from decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from decoder.bts import bts
+    from decoder.espnet import ESPNet_Decoder
 
 class MTmodel(nn.Module):
     def __init__(self, params):
@@ -26,10 +28,15 @@ class MTmodel(nn.Module):
         self.encoder = encoder(params)
 
         # Semantic
-        self.recurrence = 2 # For 2 loop in RRCAModule
-        self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
-        # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
-        # self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
+        self.semantic_head = params.semantic_head
+        if self.semantic_head == "CCNet":
+            self.recurrence = 2 # For 2 loop in RRCAModule
+            self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
+            # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
+        elif self.semantic_head == "HRNet":
+            self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
+        elif self.semantic_head == "ESPNet":
+            self.semantic_decoder= ESPNet_Decoder(classes=params.num_classes, input_channels=self.encoder.feat_out_channels[:3])
 
         # Depth
         bts_size = 512
@@ -39,8 +46,12 @@ class MTmodel(nn.Module):
         feature_maps = self.encoder(x) # five feature maps
         
         res = []
-        res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
-        # res.append(self.semantic_decoder(feature_maps[-4:]))
+        if self.semantic_head == "CCNet":
+            res.append(self.semantic_decoder(feature_maps[-1], self.recurrence)) # use the last
+        elif self.semantic_head == "HRNet":
+            res.append(self.semantic_decoder(feature_maps[-4:]))
+        elif self.semantic_head == "ESPNet":
+            res.append(self.semantic_decoder(feature_maps[:3]))
 
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)
         res.append(final_depth)
@@ -55,27 +66,26 @@ if __name__ == '__main__':
     parser.add_argument('--summary', action='store_true', help='Summary Model')
     # Semantic Segmentation
     parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
     params = parser.parse_args()
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     model = MTmodel(params).to(device)
     print("load model to device")
     
     if params.summary:
         summary(model, (3, 32, 32))
         
-    if True:
+    if params.semantic_head == 'HRNet':
         torch.cuda.set_device(device)
-        torch.distributed.init_process_group(
-            backend="nccl", init_method="env://",
-        )
+        torch.distributed.init_process_group(backend="nccl", init_method="env://",)
         print('for HRNet')
     
-    ran = torch.rand((4, 3, 64, 64)).to(device)
+    ran = torch.rand((4, 3, 64, 64)).to(device)    
     model.forward(ran)
     print("pass")
     

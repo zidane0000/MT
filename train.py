@@ -91,6 +91,10 @@ def train(params):
     depth_loss_history = []
     smnt_val_loss_history = []
     depth_val_loss_history = []
+    mean_iou_history = []
+    d1_history = []
+    d2_history = []
+    d3_history = []
 
     for epoch in range(epochs):
         if RANK != -1:
@@ -130,12 +134,17 @@ def train(params):
         
         if RANK in [-1, 0]: # Process 0
             # Test
-            (smnt_val_loss, depth_val_loss), _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
+            (smnt_val_loss, depth_val_loss), (smnt_mean_iou_val, smnt_iou_array_val), depth_val = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
             
-            smnt_loss_history.append(mean_loss[0])
-            depth_loss_history.append(mean_loss[1])
-            smnt_val_loss_history.append(smnt_val_loss)
-            depth_val_loss_history.append(depth_val_loss)
+            smnt_loss_history.append(mean_loss[0].cpu().numpy())
+            depth_loss_history.append(mean_loss[1].cpu().numpy())
+            smnt_val_loss_history.append(smnt_val_loss.cpu().numpy())
+            depth_val_loss_history.append(depth_val_loss.cpu().numpy())
+            
+            mean_iou_history.append(smnt_mean_iou_val)
+            d1_history.append(depth_val[-3])
+            d2_history.append(depth_val[-2])
+            d3_history.append(depth_val[-1])
 
             # Save model
             if (epoch % params.save_cycle) == 0:
@@ -151,8 +160,20 @@ def train(params):
         plt.plot(range(epochs), smnt_val_loss_history)
         plt.plot(range(epochs), depth_val_loss_history)
         plt.legend(['semantic','depth','semantic(val)','depth(val)'])
-        plt.savefig(save_dir / 'history.png')
-
+        plt.savefig(save_dir / 'loss_history.png')
+        plt.clf()
+        
+        plt.plot(range(epochs), mean_iou_history)
+        plt.savefig(save_dir / 'mean_iou_history.png')
+        plt.clf()
+        
+        plt.plot(range(epochs), d1_history)
+        plt.plot(range(epochs), d2_history)
+        plt.plot(range(epochs), d3_history)
+        plt.legend(['d1','d2','d3'])
+        plt.savefig(save_dir / 'depth_history.png')
+        plt.clf()
+        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

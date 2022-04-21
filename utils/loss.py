@@ -189,7 +189,7 @@ class CriterionOhemDSN(nn.Module):
 class ComputeLoss:
     def __init__(self):
         super(ComputeLoss, self).__init__()
-        self.semantic_loss_function = CriterionDSN() # CriterionOhemDSN()
+        self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
         self.depth_loss_function = silog_loss()
     
     def __call__(self, predicts, targets):

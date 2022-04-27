@@ -163,6 +163,11 @@ def reduce_tensor(inp):
     return reduced_inp / world_size
 
 
+def intersect_dicts(da, db):
+    # Dictionary intersection of matching keys and shapes, omitting 'exclude' keys, using da values
+    return {k: v for k, v in da.items() if k in db and v.shape == db[k].shape}
+
+
 # Inhert from ESPNetv2, where adapted from https://github.com/shelhamer/fcn.berkeleyvision.org/blob/master/score.py
 # IOU result same as compute_ccnet_eval
 class iouEval:

@@ -16,14 +16,20 @@ from tqdm import tqdm
 
 from val import val_one as val
 from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path, select_device, LOGGER
-from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
-# from models.decoder.espnet import ESPNet as OneModel
-from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts
+
+task = 'depth'
+if task == 'smnt':
+    from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
+    #  from models.decoder.espnet import ESPNet as OneModel
+    from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+elif task == 'depth':
+    from utils.loss import silog_loss as ComputeLoss
+    from models.decoder.bts import BtsModel as OneModel
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
-WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1)) # 實際就是機器的個數, 例如兩台機器一起訓練的話, world_size就設置為2
 
 
 def train(params):
@@ -40,14 +46,23 @@ def train(params):
 
     # Model
     LOGGER.info("begin to bulid up model...")
-    model = OneModel(cfg).to(device)
+    
+    pretrained = (params.pretrain is not None) and (params.pretrain.endswith('.pt'))
+    if pretrained:
+        model = OneModel(params).to(device)
+        ckpt = torch.load(params.pretrain, map_location=device)  # load checkpoint
+        ckpt = intersect_dicts(ckpt['model'], model.state_dict())  # intersect
+        model.load_state_dict(ckpt, strict=True)  # load
+        LOGGER.info(f'Transferred {len(ckpt)}/{len(model.state_dict())} items from {params.pretrain}')  # report
+    else:
+        model = OneModel(params).to(device)
     LOGGER.info("load model to device")
 
     # Optimizer
     if params.adam:
         optimizer = Adam(model.parameters(), lr=params.learning_rate, betas=(params.momentum, 0.999), weight_decay=params.weight_decay)
     else:
-        optimizer = SGD(model.parameters(), lr=params.learning_rate, momentum=params.momentum, weight_decay=params.weight_decay)
+        optimizer = SGD(model.parameters(), lr=params.learning_rate, momentum=params.momentum, weight_decay=params.weight_decay, nesterov=True)
     LOGGER.info(f"optimizer : {type(optimizer).__name__}")
 
     # Scheduler
@@ -90,17 +105,15 @@ def train(params):
         if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
             
+        # current learning rate
+        lr = [x['lr'] for x in optimizer.param_groups]
+        LOGGER.info(f'Learning rate : {lr}')
+            
         # Train
         model.train()
         pbar = enumerate(train_loader)
         if RANK in [-1, 0]: # Process 0
-            pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar        
-        
-        # current learning rate
-        lr = 0
-        for param_group in optimizer.param_groups:
-            lr = param_group['lr']
-        LOGGER.info("Learning rate : " +  str(lr))
+            pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
         
         # mean loss
         mean_loss = torch.zeros(1, device=device)
@@ -108,12 +121,13 @@ def train(params):
             img, (smnt, depth) = item
             img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
             smnt = smnt.to(device)
-            # depth = depth.to(device)
+            depth = depth.to(device)
 
             optimizer.zero_grad()
 
             output = model(img)
-            loss = compute_loss(output, smnt)
+            gt = smnt if task == 'smnt' else depth
+            loss = compute_loss(output, gt)
             
             if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -129,7 +143,7 @@ def train(params):
         
         if RANK in [-1, 0]: # Process 0
             # Test
-            val_loss, _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss, task = "smnt")
+            val_loss, _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss, task = task)
             
             loss_history.append(mean_loss)
             val_loss_history.append(val_loss)
@@ -137,7 +151,7 @@ def train(params):
             # Save model
             if (epoch % params.save_cycle) == 0:
                 ckpt = {'epoch': epoch,
-                        'model': model.state_dict(),
+                        'model': model.module.state_dict(),
                         'date': datetime.now().isoformat()}
                 torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
                 del ckpt
@@ -152,6 +166,7 @@ def train(params):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root',               type=str, help='root for Cityscapes', default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes')
+    parser.add_argument('--pretrain',            type=str, help='initial weights path', default=None, )
     parser.add_argument('--project',            type=str, help='directory to save checkpoints and summaries', default='./runs/train/')
     parser.add_argument('--name',               type=str, help='save to project/name', default='mt')
     parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')

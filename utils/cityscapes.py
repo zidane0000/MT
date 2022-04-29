@@ -52,7 +52,7 @@ class Cityscapes(Dataset):
         self.random_flip = random_flip
         self.random_crop = random_crop
         self.images = []
-        self.targets = []       
+        self.targets = []
 
         verify_str_arg(mode, "mode", ("fine", "coarse"))
         if mode == "fine":
@@ -100,8 +100,12 @@ class Cityscapes(Dataset):
                                                      self._get_target_suffix(self.mode, t))
                         target_types.append(os.path.join(target_dir, target_name))
 
-                    self.images.append(os.path.join(img_dir, file_name))
-                    self.targets.append(target_types)
+                    if type(self.images) == np.ndarray:
+                        self.images = np.append(self.images, os.path.join(img_dir, file_name))
+                        self.targets = np.append(self.targets, target_types)
+                    else:
+                        self.images.append(os.path.join(img_dir, file_name))
+                        self.targets.append(target_types)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -141,9 +145,9 @@ class Cityscapes(Dataset):
         image = np.moveaxis(image, -1, 0)
 
         for i in range(len(target)):
-            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)       
+            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         
-        return image, target
+        return image, np.array(target)
 
     def __len__(self) -> int:
         return len(self.images)
@@ -170,14 +174,22 @@ class Cityscapes(Dataset):
             return 'disparity.png'
 
 
+def collate_fn(batch):
+    images, targets = zip(*batch)
+
+    images = np.stack(images, 0)
+    targets = np.stack(targets, 1)
+    return torch.from_numpy(images), torch.from_numpy(targets)
+
+
 def Create_Cityscapes(params, mode='train', rank=-1):
     batch_size = params.batch_size
     workers = params.workers
     input_height, input_width = params.input_height, params.input_width
 
-    dataset = Cityscapes(params.root, 
-                        input_height=input_height, 
-                        input_width=input_width, 
+    dataset = Cityscapes(params.root,
+                        input_height=input_height,
+                        input_width=input_width,
                         num_classes=params.num_classes,
                         split=mode,
                         mode='fine',
@@ -186,11 +198,12 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         random_crop=params.random_crop)
     sampler = None if rank == -1 else get_sampler(dataset)
     dataloader = DataLoader(
-                    dataset, 
-                    batch_size=batch_size, 
-                    num_workers=workers, 
+                    dataset,
+                    batch_size=batch_size,
+                    num_workers=workers,
                     shuffle=True and sampler is None,
-                    sampler=sampler,)
+                    sampler=sampler,
+                    collate_fn=collate_fn)
     
     return dataset, dataloader
 

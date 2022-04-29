@@ -6,6 +6,7 @@ import numpy as np
 import math
 import torch
 import torch.nn as nn
+import psutil
 
 from pathlib import Path
 
@@ -218,6 +219,12 @@ class iouEval:
         mIOU = self.mIOU / self.batchCount
 
         return overall_acc, per_class_acc, per_class_iu, mIOU
+
+def safety_cpu(max=20):
+    cpu = psutil.virtual_memory().used / 1E9 # G
+    if cpu > max:
+        print(f'Warning : cpu usage {cpu} is bigger then {max}')
+        input()
 
 
 if __name__ == '__main__':

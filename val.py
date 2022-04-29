@@ -8,7 +8,7 @@ from pathlib import Path
 
 from models.mt import MTmodel
 from utils.loss import ComputeLoss
-from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -131,6 +131,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             output = model(img)
 
         if compute_loss:
+            safety_cpu()
             loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
@@ -248,6 +249,7 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
             output = model(img)
 
         if compute_loss:
+            safety_cpu()
             loss = compute_loss(output, gt)
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + loss) / (i + 1)

@@ -16,12 +16,12 @@ from tqdm import tqdm
 
 from val import val_one as val
 from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts
+from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu
 
 task = 'depth'
 if task == 'smnt':
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
-    #  from models.decoder.espnet import ESPNet as OneModel
+    # from models.decoder.espnet import ESPNet as OneModel
     from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
 elif task == 'depth':
     from utils.loss import silog_loss as ComputeLoss
@@ -75,7 +75,7 @@ def train(params):
     # DP mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         LOGGER.info('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
-        model = torch.nn.DataParallel(model)
+        model = torch.nn.DataParallel(model).cuda()
         
     # SyncBatchNorm
     if params.sync_bn and cuda and RANK != -1:
@@ -130,14 +130,15 @@ def train(params):
             loss = compute_loss(output, gt)
             
             if RANK != -1:
-                    loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+                loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
             loss.backward()
             optimizer.step()
 
             # Log
             if RANK in [-1, 0]: # Process 0
+                safety_cpu() # check if cpu memory is enough
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                mean_loss = (mean_loss * i + loss) / (i + 1)
+                mean_loss = (mean_loss * i + loss.detach().item()) / (i + 1)
                 pbar.set_description(('epoch:%8s' + '  mem:%8s' + '  loss:%6.6g') % (f'{epoch}/{epochs - 1}', mem, mean_loss))
         scheduler.step()
         

@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from val import val
 from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path, select_device, LOGGER
+from utils.general import one_cycle, increment_path, select_device, LOGGER, safety_cpu
 from utils.loss import ComputeLoss
 from models.mt import MTmodel
 
@@ -126,6 +126,7 @@ def train(params):
 
             # Log
             if RANK in [-1, 0]: # Process 0
+                safety_cpu()
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
                 pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (

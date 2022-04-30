@@ -6,7 +6,7 @@ import functools
 from inplace_abn import InPlaceABN, InPlaceABNSync
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 
-def INF(B,H,W,device='cpu'):
+def INF(B,H,W,device):
      return -torch.diag(torch.tensor(float("inf")).to(device).repeat(H),0).unsqueeze(0).repeat(B*W,1,1)
 
 

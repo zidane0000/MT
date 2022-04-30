@@ -189,6 +189,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
     parser.add_argument('--local_rank',         type=int,   help='DDP parameter, do not modify', default=-1)
+    parser.add_argument('--max-cpu',            type=int,   help='Maximum CPU Usage(G) for Safety', default=20)
     parser.add_argument("--momentum",           type=float, help="Momentum component of the optimiser.", default=0.937)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)

@@ -25,7 +25,7 @@ RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 
-def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, compute_loss):
+def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, compute_loss, max_cpu):
     # Train
     model.train()
     pbar = enumerate(train_loader)
@@ -52,10 +52,10 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
 
         # Log
         if RANK in [-1, 0]: # Process 0
-            safety_cpu()
+            safety_cpu(max_cpu)
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
-            pbar.set_description(('height:%6.6g' + '  width:%6.6g'  + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
+            pbar.set_description(('h:%6.6g' + '  w:%6.6g'  + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
                     train_dataset.height, train_dataset.width, mem, mean_loss[0], mean_loss[1]))
     return mean_loss
 
@@ -146,10 +146,10 @@ def train(params):
             
         LOGGER.info(f'Epoch:{epoch}/{epochs - 1}')
         LOGGER.info('training with scale 1')
-        train_oneDataloader(model, train_dataset_scale1, train_loader_scale1, optimizer, device, compute_loss)
+        train_oneDataloader(model, train_dataset_scale1, train_loader_scale1, optimizer, device, compute_loss, params.max_cpu)
         
         LOGGER.info('training with scale full')
-        mean_loss = train_oneDataloader(model, train_dataset, train_loader, optimizer, device, compute_loss)
+        mean_loss = train_oneDataloader(model, train_dataset, train_loader, optimizer, device, compute_loss, params.max_cpu)
         scheduler.step()
         
         if RANK in [-1, 0]: # Process 0
@@ -208,6 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
     parser.add_argument('--local_rank',         type=int,   help='DDP parameter, do not modify', default=-1)
+    parser.add_argument('--max-cpu',            type=int,   help='Maximum CPU Usage(G) for Safety', default=20)
     parser.add_argument("--momentum",           type=float, help="Momentum component of the optimiser.", default=0.937)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)

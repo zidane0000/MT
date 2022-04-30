@@ -131,7 +131,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             output = model(img)
 
         if compute_loss:
-            safety_cpu()
+            safety_cpu(params.max_cpu)
             loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
@@ -249,7 +249,7 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
             output = model(img)
 
         if compute_loss:
-            safety_cpu()
+            safety_cpu(params.max_cpu)
             loss = compute_loss(output, gt)
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + loss) / (i + 1)
@@ -299,11 +299,12 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',       type=int, default=256, help='input height')
     parser.add_argument('--input_width',        type=int, default=512, help='input width')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
-    parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
-    parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
+    parser.add_argument('--max-cpu',            type=int,   help='Maximum CPU Usage(G) for Safety', default=20)
+    parser.add_argument('--device',             default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--exist-ok',           action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--plot',               action='store_true', help='plot the loss and eval result')
+    parser.add_argument('--random-flip',        action='store_true', help='flip the image and target')
+    parser.add_argument('--random-crop',        action='store_true', help='crop the image and target')
     # Semantic Segmentation
     parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 

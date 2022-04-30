@@ -254,7 +254,177 @@ class bts(nn.Module):
         return depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth
     
 
-from ..encoder import encoder
+class bts_4channel(nn.Module):
+    def __init__(self, params, feat_out_channels, num_features=512):
+        super(bts_4channel, self).__init__()
+        self.params = params
+        
+        self.upconv4    = upconv(feat_out_channels[3], num_features // 2)
+        self.bn4        = nn.BatchNorm2d(num_features // 2, momentum=0.01, affine=True, eps=1.1e-5)
+        self.conv4      = torch.nn.Sequential(nn.Conv2d(num_features // 2 + feat_out_channels[2], num_features // 2, 3, 1, 1, bias=False),
+                                              nn.ELU())
+        self.bn4_2      = nn.BatchNorm2d(num_features // 2, momentum=0.01, affine=True, eps=1.1e-5)
+        
+        self.daspp_3    = atrous_conv(num_features // 2, num_features // 4, 3, apply_bn_first=False)
+        self.daspp_6    = atrous_conv(num_features // 2 + num_features // 4 + feat_out_channels[2], num_features // 4, 6)
+        self.daspp_12   = atrous_conv(num_features + feat_out_channels[2], num_features // 4, 12)
+        self.daspp_18   = atrous_conv(num_features + num_features // 4 + feat_out_channels[2], num_features // 4, 18)
+        self.daspp_24   = atrous_conv(num_features + num_features // 2 + feat_out_channels[2], num_features // 4, 24)
+        self.daspp_conv = torch.nn.Sequential(nn.Conv2d(num_features + num_features // 2 + num_features // 4, num_features // 4, 3, 1, 1, bias=False),
+                                              nn.ELU())
+        self.reduc8x8   = reduction_1x1(num_features // 4, num_features // 4, self.params.max_depth)
+        self.lpg8x8     = local_planar_guidance(8)
+        
+        self.upconv3    = upconv(num_features // 4, num_features // 4)
+        self.bn3        = nn.BatchNorm2d(num_features // 4, momentum=0.01, affine=True, eps=1.1e-5)
+        self.conv3      = torch.nn.Sequential(nn.Conv2d(num_features // 4 + feat_out_channels[1] + 1, num_features // 4, 3, 1, 1, bias=False),
+                                              nn.ELU())
+        self.reduc4x4   = reduction_1x1(num_features // 4, num_features // 8, self.params.max_depth)
+        self.lpg4x4     = local_planar_guidance(4)
+        
+        self.upconv2    = upconv(num_features // 4, num_features // 8)
+        self.bn2        = nn.BatchNorm2d(num_features // 8, momentum=0.01, affine=True, eps=1.1e-5)
+        self.conv2      = torch.nn.Sequential(nn.Conv2d(num_features // 8 + feat_out_channels[0] + 1, num_features // 8, 3, 1, 1, bias=False),
+                                              nn.ELU())
+        
+        self.reduc2x2   = reduction_1x1(num_features // 8, num_features // 16, self.params.max_depth)
+        self.lpg2x2     = local_planar_guidance(2)
+        
+        self.upconv1    = upconv(num_features // 8, num_features // 16)
+        self.reduc1x1   = reduction_1x1(num_features // 16, num_features // 32, self.params.max_depth, is_final=True)
+        self.conv1      = torch.nn.Sequential(nn.Conv2d(num_features // 16 + 4, num_features // 16, 3, 1, 1, bias=False),
+                                              nn.ELU())
+        self.get_depth  = torch.nn.Sequential(nn.Conv2d(num_features // 16, 1, 3, 1, 1, bias=False),
+                                              nn.Sigmoid())
+
+    def forward(self, features):
+        skip0, skip1, skip2, skip3 = features[0], features[1], features[2], features[3]        
+        
+        upconv4 = self.upconv4(skip3) # H/8
+        upconv4 = self.bn4(upconv4)
+        concat4 = torch.cat([upconv4, skip2], dim=1)
+        iconv4 = self.conv4(concat4)
+        iconv4 = self.bn4_2(iconv4)
+        
+        daspp_3 = self.daspp_3(iconv4)
+        concat4_2 = torch.cat([concat4, daspp_3], dim=1)
+        daspp_6 = self.daspp_6(concat4_2)
+        concat4_3 = torch.cat([concat4_2, daspp_6], dim=1)
+        daspp_12 = self.daspp_12(concat4_3)
+        concat4_4 = torch.cat([concat4_3, daspp_12], dim=1)
+        daspp_18 = self.daspp_18(concat4_4)
+        concat4_5 = torch.cat([concat4_4, daspp_18], dim=1)
+        daspp_24 = self.daspp_24(concat4_5)
+        concat4_daspp = torch.cat([iconv4, daspp_3, daspp_6, daspp_12, daspp_18, daspp_24], dim=1)
+        daspp_feat = self.daspp_conv(concat4_daspp)
+        
+        reduc8x8 = self.reduc8x8(daspp_feat)
+        plane_normal_8x8 = reduc8x8[:, :3, :, :]
+        plane_normal_8x8 = torch_nn_func.normalize(plane_normal_8x8, 2, 1)
+        plane_dist_8x8 = reduc8x8[:, 3, :, :]
+        plane_eq_8x8 = torch.cat([plane_normal_8x8, plane_dist_8x8.unsqueeze(1)], 1)
+        depth_8x8 = self.lpg8x8(plane_eq_8x8)
+        depth_8x8_scaled = depth_8x8.unsqueeze(1) / self.params.max_depth
+        depth_8x8_scaled_ds = torch_nn_func.interpolate(depth_8x8_scaled, scale_factor=0.25, recompute_scale_factor=False, mode='nearest')
+        
+        upconv3 = self.upconv3(daspp_feat) # H/4
+        upconv3 = self.bn3(upconv3)
+        concat3 = torch.cat([upconv3, skip1, depth_8x8_scaled_ds], dim=1)
+        iconv3 = self.conv3(concat3)
+        
+        reduc4x4 = self.reduc4x4(iconv3)
+        plane_normal_4x4 = reduc4x4[:, :3, :, :]
+        plane_normal_4x4 = torch_nn_func.normalize(plane_normal_4x4, 2, 1)
+        plane_dist_4x4 = reduc4x4[:, 3, :, :]
+        plane_eq_4x4 = torch.cat([plane_normal_4x4, plane_dist_4x4.unsqueeze(1)], 1)
+        depth_4x4 = self.lpg4x4(plane_eq_4x4)
+        depth_4x4_scaled = depth_4x4.unsqueeze(1) / self.params.max_depth
+        depth_4x4_scaled_ds = torch_nn_func.interpolate(depth_4x4_scaled, scale_factor=0.5, recompute_scale_factor=False, mode='nearest')
+        
+        upconv2 = self.upconv2(iconv3) # H/2
+        upconv2 = self.bn2(upconv2)
+        concat2 = torch.cat([upconv2, skip0, depth_4x4_scaled_ds], dim=1)
+        iconv2 = self.conv2(concat2)
+        
+        reduc2x2 = self.reduc2x2(iconv2)
+        plane_normal_2x2 = reduc2x2[:, :3, :, :]
+        plane_normal_2x2 = torch_nn_func.normalize(plane_normal_2x2, 2, 1)
+        plane_dist_2x2 = reduc2x2[:, 3, :, :]
+        plane_eq_2x2 = torch.cat([plane_normal_2x2, plane_dist_2x2.unsqueeze(1)], 1)
+        depth_2x2 = self.lpg2x2(plane_eq_2x2)
+        depth_2x2_scaled = depth_2x2.unsqueeze(1) / self.params.max_depth
+        
+        upconv1 = self.upconv1(iconv2)
+        reduc1x1 = self.reduc1x1(upconv1)
+        concat1 = torch.cat([upconv1, reduc1x1, depth_2x2_scaled, depth_4x4_scaled, depth_8x8_scaled], dim=1)
+        iconv1 = self.conv1(concat1)
+        final_depth = self.params.max_depth * self.get_depth(iconv1)
+        
+        return depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth
+
+
+class encoder(nn.Module):
+    def __init__(self, params):
+        super(encoder, self).__init__()
+        self.params = params
+        import torchvision.models as models
+        if params.encoder == 'densenet121':
+            self.base_model = models.densenet121(pretrained=True).features
+            self.feat_names = ['relu0', 'pool0', 'transition1', 'transition2', 'norm5']
+            self.feat_out_channels = [64, 64, 128, 256, 1024]
+        elif params.encoder == 'densenet161':
+            self.base_model = models.densenet161(pretrained=True).features
+            self.feat_names = ['relu0', 'pool0', 'transition1', 'transition2', 'norm5']
+            self.feat_out_channels = [96, 96, 192, 384, 2208]
+        elif params.encoder == 'resnet50':
+            self.base_model = models.resnet50(pretrained=True)
+            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
+            self.feat_out_channels = [64, 256, 512, 1024, 2048]
+        elif params.encoder == 'resnet101':
+            self.base_model = models.resnet101(pretrained=True)
+            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
+            self.feat_out_channels = [64, 256, 512, 1024, 2048]
+        elif params.encoder == 'resnext50':
+            self.base_model = models.resnext50_32x4d(pretrained=True)
+            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
+            self.feat_out_channels = [64, 256, 512, 1024, 2048]
+        elif params.encoder == 'resnext101':
+            self.base_model = models.resnext101_32x8d(pretrained=True)
+            self.feat_names = ['relu', 'layer1', 'layer2', 'layer3', 'layer4']
+            self.feat_out_channels = [64, 256, 512, 1024, 2048]
+        elif params.encoder == 'mobilenetv2':
+            self.base_model = models.mobilenet_v2(pretrained=True).features
+            self.feat_inds = [2, 4, 7, 11, 19]
+            self.feat_out_channels = [16, 24, 32, 64, 1280]
+            self.feat_names = []
+        elif params.encoder == 'CCNet_resnet50':
+            layers = [3, 4, 23, 3]
+            self.base_model = CCNet_resnet50(Bottleneck, layers)
+            self.feat_out_channels = [64, 64, 128, 128, 2048]
+        else:
+            LOGGER.error('Not supported encoder: {}'.format(params.encoder))
+
+    def forward(self, x):
+        if self.params.encoder == 'CCNet_resnet50':
+            return self.base_model(x)
+            
+        feature = x
+        skip_feat = []
+        i = 1
+        for k, v in self.base_model._modules.items():
+            if 'fc' in k or 'avgpool' in k:
+                continue
+            feature = v(feature)
+            if self.params.encoder == 'mobilenetv2':
+                if i == 2 or i == 4 or i == 7 or i == 11 or i == 19:
+                    skip_feat.append(feature)
+            else:
+                if any(x in k for x in self.feat_names):
+                    skip_feat.append(feature)
+            i = i + 1
+        return skip_feat
+
+
 class BtsModel(nn.Module):
     def __init__(self, params):
         super(BtsModel, self).__init__()

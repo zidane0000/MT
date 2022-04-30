@@ -23,9 +23,12 @@ if task == 'smnt':
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
     # from models.decoder.espnet import ESPNet as OneModel
     from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+    model_type = 'HighResolutionNet'
 elif task == 'depth':
     from utils.loss import silog_loss as ComputeLoss
-    from models.decoder.bts import BtsModel as OneModel
+#     from models.decoder.bts import BtsModel as OneModel
+    from models.decoder.yolo import YOLOR as OneModel
+    model_type = 'BTS'
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -48,14 +51,15 @@ def train(params):
     LOGGER.info("begin to bulid up model...")
     
     pretrained = (params.pretrain is not None) and (params.pretrain.endswith('.pt'))
+    cfg = cfg if model_type == 'HighResolutionNet' else params
     if pretrained:
-        model = OneModel(params).to(device)
+        model = OneModel(cfg).to(device)
         ckpt = torch.load(params.pretrain, map_location=device)  # load checkpoint
         ckpt = intersect_dicts(ckpt['model'], model.state_dict())  # intersect
         model.load_state_dict(ckpt, strict=True)  # load
         LOGGER.info(f'Transferred {len(ckpt)}/{len(model.state_dict())} items from {params.pretrain}')  # report
     else:
-        model = OneModel(params).to(device)
+        model = OneModel(cfg).to(device)
     LOGGER.info("load model to device")
 
     # Optimizer
@@ -124,8 +128,12 @@ def train(params):
             depth = depth.to(device)
 
             optimizer.zero_grad()
-
+            
+            img = img.to(device, non_blocking=True).float() / 255
             output = model(img)
+            print('pass')
+            input()
+            output = output[-1] if model_type == 'YOLOR' else output
             gt = smnt if task == 'smnt' else depth
             loss = compute_loss(output, gt)
             
@@ -178,6 +186,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)
     parser.add_argument('--input_width',        type=int,   help='input width',  default=512)
     parser.add_argument('--local_rank',         type=int,   help='DDP parameter, do not modify', default=-1)
+    parser.add_argument('--max-cpu',            type=int,   help='Maximum CPU Usage(G) for Safety', default=20)
     parser.add_argument("--momentum",           type=float, help="Momentum component of the optimiser.", default=0.937)
     parser.add_argument('--weight_decay',       type=float, help='weight decay factor for optimization', default=1e-2)
     parser.add_argument('--learning_rate',      type=float, help='initial learning rate', default=1e-4)

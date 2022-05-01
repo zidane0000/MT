@@ -147,7 +147,7 @@ class Cityscapes(Dataset):
         for i in range(len(target)):
             target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         
-        return image, np.array(target)
+        return torch.from_numpy(image), torch.from_numpy(np.array(target))
 
     def __len__(self) -> int:
         return len(self.images)
@@ -176,10 +176,7 @@ class Cityscapes(Dataset):
 
 def collate_fn(batch):
     images, targets = zip(*batch)
-
-    images = np.stack(images, 0)
-    targets = np.stack(targets, 1)
-    return torch.from_numpy(images), torch.from_numpy(targets)
+    return torch.stack(images, 0), torch.stack(targets, 1)
 
 
 def Create_Cityscapes(params, mode='train', rank=-1):

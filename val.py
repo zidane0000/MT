@@ -196,7 +196,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
     
 
-def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
+def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
     if task is None:
         LOGGER.info("No define Task")
         return None
@@ -247,6 +247,7 @@ def val_one(params, save_dir=None, model=None, device=None, compute_loss=None, v
 
         with torch.no_grad():
             output = model(img)
+            output = output[-1] if model_type == 'yolor' else output
 
         if compute_loss:
             safety_cpu(params.max_cpu)

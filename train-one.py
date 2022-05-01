@@ -18,17 +18,25 @@ from val import val_one as val
 from utils.cityscapes import Create_Cityscapes
 from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu
 
-task = 'depth'
-if task == 'smnt':
+model_type = 'yolor'.lower()
+if model_type in ['ccnet','espnet', 'hrnet']:
+    task = 'depth'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
-    # from models.decoder.espnet import ESPNet as OneModel
-    from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
-    model_type = 'HighResolutionNet'
-elif task == 'depth':
+    
+    if model_type == 'espnet':
+        from models.decoder.espnet import ESPNet as OneModel
+    elif model_type == 'hrnet':
+        from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+elif model_type.lower() in ['bts','yolor']:    
+    task = 'smnt'
     from utils.loss import silog_loss as ComputeLoss
-#     from models.decoder.bts import BtsModel as OneModel
-    from models.decoder.yolo import YOLOR as OneModel
-    model_type = 'BTS'
+    
+    if model_type == 'bts':
+        from models.decoder.bts import BtsModel as OneModel
+    elif model_type == 'yolor':
+        from models.decoder.yolo import YOLOR as OneModel
+assert OneModel is not None, 'Unkown OneModel'
+assert ComputeLoss is not None, 'Unkown ComputeLoss'
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -129,11 +137,8 @@ def train(params):
 
             optimizer.zero_grad()
             
-            img = img.to(device, non_blocking=True).float() / 255
             output = model(img)
-            print('pass')
-            input()
-            output = output[-1] if model_type == 'YOLOR' else output
+            output = output[-1] if model_type == 'yolor' else output
             gt = smnt if task == 'smnt' else depth
             loss = compute_loss(output, gt)
             
@@ -152,7 +157,7 @@ def train(params):
         
         if RANK in [-1, 0]: # Process 0
             # Test
-            val_loss, _, _ = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss, task = task)
+            val_loss, _, _ = val(params, save_dir=save_dir, model_type=model_type, model=model, device=device, compute_loss=compute_loss, task = task)
             
             loss_history.append(mean_loss)
             val_loss_history.append(val_loss)

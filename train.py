@@ -109,7 +109,7 @@ def train(params):
         # mean loss
         mean_loss = torch.zeros(2, device=device)
         for i, item in pbar:
-            img, (smnt, depth) = item
+            img, smnt, depth = item
             img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
             smnt = smnt.to(device)
             depth = depth.to(device)
@@ -126,7 +126,7 @@ def train(params):
 
             # Log
             if RANK in [-1, 0]: # Process 0
-                safety_cpu()
+                safety_cpu(params.max_cpu)
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
                 pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (

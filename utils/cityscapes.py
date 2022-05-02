@@ -107,47 +107,37 @@ class Cityscapes(Dataset):
                         self.images.append(os.path.join(img_dir, file_name))
                         self.targets.append(target_types)
 
-    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+    def __getitem__(self, index: int):
         """
         Args:
             index (int): Index
-        Returns:
-            tuple: (image, target) where target is a tuple of all target types if target_type is a list with more
-            than one item. Target is the image segmentation.
         """
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
-
-        targets: Any = []
-        for i, t in enumerate(self.target_type):
-            # target = Image.open(self.targets[index][i])
-            target = cv2.imread(self.targets[index][i], cv2.IMREAD_GRAYSCALE)
-            assert target is not None, f'Target {t} Not Found {self.targets[index][i]}'
-
-            if t == 'semantic':
-                target = id2trainId(target, self.num_classes)
-            targets.append(target)
-
-        target = list(targets) if len(targets) > 1 else targets[0]
-
+        
+        smnt = cv2.imread(self.targets[index][0], cv2.IMREAD_GRAYSCALE)
+        smnt = id2trainId(smnt, self.num_classes)
+        
+        depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
+        
         if self.random_crop:
-            image, target = do_random_crop(image, target, self.width, self.height)
+            image, (smnt, depth) = do_random_crop(image, (smnt, depth), self.width, self.height)
 
         if self.random_flip:
-            image, target = do_random_flip(image, target)
+            image, (smnt, depth) = do_random_flip(image, (smnt, depth))
 
         if self.transform is not None:
             image = self.transform(image)
-            target = self.transform(target)
+            (smnt, depth) = self.transform((smnt, depth))
         
         # (w, h, channel) -> (channel, w, h) and reszie if no random crop
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
         image = np.moveaxis(image, -1, 0)
 
-        for i in range(len(target)):
-            target[i] = cv2.resize(target[i], (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        smnt = cv2.resize(smnt, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
+        depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         
-        return torch.from_numpy(image), torch.from_numpy(np.array(target))
+        return torch.from_numpy(image), torch.from_numpy(smnt), torch.from_numpy(depth)
 
     def __len__(self) -> int:
         return len(self.images)
@@ -175,8 +165,8 @@ class Cityscapes(Dataset):
 
 
 def collate_fn(batch):
-    images, targets = zip(*batch)
-    return torch.stack(images, 0), torch.stack(targets, 1)
+    images, smnts, depths = zip(*batch)
+    return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0)
 
 
 def Create_Cityscapes(params, mode='train', rank=-1):
@@ -200,7 +190,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                     num_workers=workers,
                     shuffle=True and sampler is None,
                     sampler=sampler,
-                    collate_fn=collate_fn)
+                    pin_memory=True)
     
     return dataset, dataloader
 
@@ -246,7 +236,7 @@ if __name__ == '__main__':
 
     pbar = tqdm(train_loader, total=len(train_loader))
     for i, item in enumerate(pbar):
-        img, (smnt, depth) = item
+        img, smnt, depth = item
         
 #         np_smnt = smnt[0].cpu().numpy()
 #         np_smnt = id2trainId(np_smnt, 255, reverse=True)
@@ -261,3 +251,4 @@ if __name__ == '__main__':
 
 #         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
 #         cv2.imwrite('img.jpg', np_img)
+        input()

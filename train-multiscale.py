@@ -35,7 +35,7 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
     # mean loss
     mean_loss = torch.zeros(2, device=device)
     for i, item in pbar:
-        img, (smnt, depth) = item
+        img, smnt, depth = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         smnt = smnt.to(device)
         depth = depth.to(device)

@@ -122,7 +122,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
-        img, (smnt, depth) = item
+        img, smnt, depth = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         smnt = smnt.to(device)
         depth = depth.to(device)
@@ -235,7 +235,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
-        img, (smnt, depth) = item
+        img, smnt, depth = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         
         if task == "depth":

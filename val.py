@@ -6,8 +6,6 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 
-from models.mt import MTmodel
-from utils.loss import ComputeLoss
 from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu
 from utils.cityscapes import Create_Cityscapes
 
@@ -92,7 +90,8 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
         LOGGER.info("saving to " + str(save_dir))
 
-    if model is None:        
+    if model is None:
+        from models.mt import MTmodel
         device = select_device(params.device)
         LOGGER.info("begin load model with ckpt...")
         ckpt = torch.load(params.weight)
@@ -196,20 +195,29 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
     
 
-def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
-    if task is None:
-        LOGGER.info("No define Task")
-        return None
-    
+def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):    
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
         LOGGER.info("saving to " + str(save_dir))
 
-    if model is None:        
+    if model is None:
+        if model_type in ['ccnet','espnet', 'hrnet']:  
+            task = 'smnt'
+            if model_type == 'espnet':
+                from models.decoder.espnet import ESPNet as OneModel
+            elif model_type == 'hrnet':
+                from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+        elif model_type.lower() in ['bts','yolor']:  
+            task = 'depth'
+            if model_type == 'bts':
+                from models.decoder.bts import BtsModel as OneModel
+            elif model_type == 'yolor':
+                from models.decoder.yolo import YOLOR as OneModel
+        assert OneModel is not None, 'Unkown OneModel'
         device = select_device(params.device)
         LOGGER.info("begin load model with ckpt...")
         ckpt = torch.load(params.weight)
-        model = MTmodel(params)
+        model = OneModel(params)
         if device != 'cpu' and torch.cuda.device_count() > 1:
             LOGGER.info("use multi-gpu, device=" + params.device)
             device_ids = [int(i) for i in params.device.split(',')]
@@ -219,7 +227,11 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
         model.load_state_dict(ckpt['model'])
         model.to(device)
         LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")
-    model.eval()
+    model.eval()    
+    
+    if task is None:
+        LOGGER.info("No define Task")
+        return None
 
     # Dataset, DataLoader
     if val_loader == None:
@@ -266,11 +278,39 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             np_gt_smnt= smnt.cpu().numpy()
             miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
             smnt_mean_iou_val += miou
-            smnt_iou_array_val += iou_array            
+            smnt_iou_array_val += iou_array
+            
+            if params.plot:
+                np_gt_smnt = np_gt_smnt[0]
+                np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
+                np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
+                
+                np_predict_smnt = np_predict_smnt[0]
+                np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
+                np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
         elif task == "depth":
             np_predict_depth = output.cpu().numpy().squeeze().astype(np.float32)
             np_gt_depth = depth.cpu().numpy().astype(np.float32)
             depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
+            
+            if params.plot:
+                np_predict_depth = np_predict_depth[0]
+                cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
+
+                heat_predict_depth = (np_predict_depth * 255).astype('uint8')
+                heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
+                cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
+
+                np_gt_depth = np_gt_depth[0]
+                cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
+
+                heat_gt_depth = (np_gt_depth * 255).astype('uint8')
+                heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
+                cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
+
+        if params.plot:
+            np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
+            cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
     
     smnt_mean_iou_val /= len(val_bar)
     smnt_iou_array_val /= len(val_bar)
@@ -300,18 +340,27 @@ if __name__ == '__main__':
     parser.add_argument('--workers',            type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',       type=int, default=256, help='input height')
     parser.add_argument('--input_width',        type=int, default=512, help='input width')
-    parser.add_argument('--max-cpu',            type=int,   help='Maximum CPU Usage(G) for Safety', default=20)
+    parser.add_argument('--max-cpu',            type=int, default=20,  help='Maximum CPU Usage(G) for Safety')
     parser.add_argument('--device',             default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok',           action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot',               action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip',        action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',        action='store_true', help='crop the image and target')
+    
+    # MT or One
+    parser.add_argument('--model_type',         type=str, default='mt', help='Choose Model Type by lower, mt or one model')
+    
     # Semantic Segmentation
-    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
     params = parser.parse_args()
-
-    val(params)
+    
+    params.model_type = params.model_type.lower()
+    if params.model_type == 'mt':
+        val(params=params)
+    else:
+        val_one(params=params,model_type=params.model_type)

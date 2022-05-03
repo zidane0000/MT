@@ -19,16 +19,16 @@ from utils.cityscapes import Create_Cityscapes
 from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu
 
 model_type = 'yolor'.lower()
-if model_type in ['ccnet','espnet', 'hrnet']:
-    task = 'depth'
+if model_type in ['ccnet','espnet', 'hrnet']: 
+    task = 'smnt'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
     
     if model_type == 'espnet':
         from models.decoder.espnet import ESPNet as OneModel
     elif model_type == 'hrnet':
         from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
-elif model_type.lower() in ['bts','yolor']:    
-    task = 'smnt'
+elif model_type.lower() in ['bts','yolor']:
+    task = 'depth'
     from utils.loss import silog_loss as ComputeLoss
     
     if model_type == 'bts':
@@ -112,6 +112,10 @@ def train(params):
     compute_loss = ComputeLoss()
     loss_history = []
     val_loss_history = []
+    mean_iou_history = []
+    d1_history = []
+    d2_history = []
+    d3_history = []
 
     for epoch in range(epochs):
         if RANK != -1:
@@ -157,10 +161,17 @@ def train(params):
         
         if RANK in [-1, 0]: # Process 0
             # Test
-            val_loss, _, _ = val(params, save_dir=save_dir, model_type=model_type, model=model, device=device, compute_loss=compute_loss, task = task)
+            val_loss, (smnt_mean_iou_val, smnt_iou_array_val), depth_val = val(params, save_dir=save_dir, model_type=model_type, model=model, device=device, compute_loss=compute_loss, task = task)
             
             loss_history.append(mean_loss)
-            val_loss_history.append(val_loss)
+            val_loss_history.append(val_loss)           
+            
+            if task == 'smnt':
+                mean_iou_history.append(smnt_mean_iou_val)
+            elif task == 'depth':
+                d1_history.append(depth_val[-3])
+                d2_history.append(depth_val[-2])
+                d3_history.append(depth_val[-1])
 
             # Save model
             if (epoch % params.save_cycle) == 0:
@@ -172,9 +183,22 @@ def train(params):
     
     if RANK in [-1, 0]: # Process 0
         plt.plot(range(epochs), loss_history)
-        plt.plot(range(epochs), loss_history)
+        plt.plot(range(epochs), val_loss_history)
         plt.legend(['train','val'])
         plt.savefig(save_dir / 'history.png')
+        plt.clf()
+        
+        if task == 'smnt':
+            plt.plot(range(epochs), mean_iou_history)
+            plt.savefig(save_dir / 'mean_iou_history.png')
+            plt.clf()            
+        elif task == 'depth':            
+            plt.plot(range(epochs), d1_history)
+            plt.plot(range(epochs), d2_history)
+            plt.plot(range(epochs), d3_history)
+            plt.legend(['d1','d2','d3'])
+            plt.savefig(save_dir / 'depth_history.png')
+            plt.clf()
 
 
 if __name__ == '__main__':

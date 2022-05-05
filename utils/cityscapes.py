@@ -100,12 +100,8 @@ class Cityscapes(Dataset):
                                                      self._get_target_suffix(self.mode, t))
                         target_types.append(os.path.join(target_dir, target_name))
 
-                    if type(self.images) == np.ndarray:
-                        self.images = np.append(self.images, os.path.join(img_dir, file_name))
-                        self.targets = np.append(self.targets, target_types)
-                    else:
-                        self.images.append(os.path.join(img_dir, file_name))
-                        self.targets.append(target_types)
+                    self.images.append(os.path.join(img_dir, file_name))
+                    self.targets.append(target_types)
 
     def __getitem__(self, index: int):
         """
@@ -121,10 +117,10 @@ class Cityscapes(Dataset):
         depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
         
         if self.random_crop:
-            image, (smnt, depth) = do_random_crop(image, (smnt, depth), self.width, self.height)
+            image, (smnt, depth) = do_random_crop(image, [smnt, depth], self.width, self.height)
 
         if self.random_flip:
-            image, (smnt, depth) = do_random_flip(image, (smnt, depth))
+            image, (smnt, depth) = do_random_flip(image, [smnt, depth])
 
         if self.transform is not None:
             image = self.transform(image)

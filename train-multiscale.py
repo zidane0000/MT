@@ -55,7 +55,7 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
             safety_cpu(max_cpu)
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
-            pbar.set_description(('h:%6.6g' + '  w:%6.6g'  + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
+            pbar.set_description(('h:%4.6g' + '  w:%4.6g'  + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
                     train_dataset.height, train_dataset.width, mem, mean_loss[0], mean_loss[1]))
     return mean_loss
 

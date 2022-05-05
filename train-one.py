@@ -15,10 +15,9 @@ from torch.optim import SGD, Adam, lr_scheduler
 from tqdm import tqdm
 
 from val import val_one as val
-from utils.cityscapes import Create_Cityscapes
-from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu
+from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu, create_dataloader
 
-model_type = 'yolor'.lower()
+model_type = 'bts'.lower()
 if model_type in ['ccnet','espnet', 'hrnet']: 
     task = 'smnt'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
@@ -106,7 +105,7 @@ def train(params):
         LOGGER.info('Using DDP')
         
     # Dataset, DataLoader
-    train_dataset, train_loader = Create_Cityscapes(params, mode='train', rank=LOCAL_RANK)
+    train_dataset, train_loader = create_dataloader(params, mode='train', rank=LOCAL_RANK)
 
     # loss
     compute_loss = ComputeLoss()

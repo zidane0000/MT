@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 
-from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu, create_dataloader
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -235,7 +235,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
 
     # Dataset, DataLoader
     if val_loader == None:
-        val_dataset, val_loader = Create_Cityscapes(params, mode='val')
+        val_dataset, val_loader = create_dataloader(params, mode='val')
 
     val_bar = enumerate(val_loader)
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')

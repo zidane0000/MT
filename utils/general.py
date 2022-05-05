@@ -220,11 +220,22 @@ class iouEval:
 
         return overall_acc, per_class_acc, per_class_iu, mIOU
 
+
 def safety_cpu(max=20):
     cpu = psutil.virtual_memory().used / 1E9 # G
     if cpu > max:
         print(f'Warning : cpu usage {cpu} is bigger then {max}')
         input()
+
+
+from utils.cityscapes import Create_Cityscapes
+from utils.kitti import Create_Kitti
+def create_dataloader(params, mode='train', rank=-1):    
+    if params.root.lower().find('cityscapes') > 0:
+        dataset, dataloader = Create_Cityscapes(params, mode='train', rank=-1)
+    elif params.root.lower().find('kitti') > 0:
+        dataset, dataloader = Create_Kitti(params, mode='train', rank=-1)
+    return dataset, dataloader
 
 
 if __name__ == '__main__':

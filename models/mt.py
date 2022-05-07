@@ -7,15 +7,17 @@ from torchsummary import summary
 
 try:
     from .encoder import encoder
+    from .yolo import YOLOR_backbone
     from .decoder.ccnet import CCNet, RCCAModule
     from .decoder.hrnet_ocr import HighResolutionDecoder, cfg
-    from .decoder.bts import bts
+    from .decoder.bts import bts, bts_4channel
     from .decoder.espnet import ESPNet_Decoder
 except:
     from encoder import encoder
+    from yolo import YOLOR_backbone
     from decoder.ccnet import CCNet, RCCAModule
     from decoder.hrnet_ocr import HighResolutionDecoder, cfg
-    from decoder.bts import bts
+    from decoder.bts import bts, bts_4channel
     from decoder.espnet import ESPNet_Decoder
 
 class MTmodel(nn.Module):
@@ -24,8 +26,11 @@ class MTmodel(nn.Module):
         params : dict
         '''
         super(MTmodel, self).__init__()
-
-        self.encoder = encoder(params)
+        
+        if params.encoder.lower() == 'yolor':
+            self.encoder = YOLOR_backbone(params)
+        else:
+            self.encoder = encoder(params)
 
         # Semantic
         self.semantic_head = params.semantic_head.lower()
@@ -42,7 +47,10 @@ class MTmodel(nn.Module):
 
         # Depth
         bts_size = 512
-        self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
+        if params.encoder.lower() == 'yolor':
+            self.depth_decoder = bts_4channel(params, self.encoder.feat_out_channels, bts_size)
+        else:
+            self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
 
     def forward(self, x):
         feature_maps = self.encoder(x) # five feature maps
@@ -87,7 +95,7 @@ if __name__ == '__main__':
         torch.distributed.init_process_group(backend="nccl", init_method="env://",)
         print('for HRNet')
     
-    ran = torch.rand((4, 3, 64, 64)).to(device)    
+    ran = torch.rand((4, 3, 384, 768)).to(device)    
     model.forward(ran)
     print("pass")
     

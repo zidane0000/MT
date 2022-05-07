@@ -212,7 +212,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             if model_type == 'bts':
                 from models.decoder.bts import BtsModel as OneModel
             elif model_type == 'yolor':
-                from models.decoder.yolo import YOLOR as OneModel
+                from models.yolo import YOLOR_depth as OneModel
         assert OneModel is not None, 'Unkown OneModel'
         device = select_device(params.device)
         LOGGER.info("begin load model with ckpt...")

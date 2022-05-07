@@ -17,7 +17,7 @@ from tqdm import tqdm
 from val import val_one as val
 from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu, create_dataloader
 
-model_type = 'bts'.lower()
+model_type = 'yolor'.lower()
 if model_type in ['ccnet','espnet', 'hrnet']: 
     task = 'smnt'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
@@ -33,7 +33,7 @@ elif model_type.lower() in ['bts','yolor']:
     if model_type == 'bts':
         from models.decoder.bts import BtsModel as OneModel
     elif model_type == 'yolor':
-        from models.decoder.yolo import YOLOR as OneModel
+        from models.yolo import YOLOR_depth as OneModel
 assert OneModel is not None, 'Unkown OneModel'
 assert ComputeLoss is not None, 'Unkown ComputeLoss'
 

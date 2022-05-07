@@ -126,7 +126,7 @@ def do_random_crop(image, target, input_width, input_height):
     if h_gap < 0 or w_gap < 0:
         top = abs(int(h_gap / 2)) if h_gap < 0 else 0
         down = abs(h_gap + top) if h_gap < 0 else 0
-        left = int(w_gap / 2) if w_gap < 0 else 0
+        left = abs(int(w_gap / 2)) if w_gap < 0 else 0
         right = abs(w_gap + left) if w_gap < 0 else 0
         image = cv2.copyMakeBorder(image, top, down, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
         target = cv2.copyMakeBorder(target, top, down, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))

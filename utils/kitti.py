@@ -121,8 +121,21 @@ def do_random_flip(image, target):
 
 def do_random_crop(image, target, input_width, input_height):
     img_h, img_w, channel = image.shape
+    
+    h_gap, w_gap = img_h - input_height, img_w - input_width
+    if h_gap < 0 or w_gap < 0:
+        top = abs(int(h_gap / 2)) if h_gap < 0 else 0
+        down = abs(h_gap + top) if h_gap < 0 else 0
+        left = int(w_gap / 2) if w_gap < 0 else 0
+        right = abs(w_gap + left) if w_gap < 0 else 0
+        image = cv2.copyMakeBorder(image, top, down, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
+        target = cv2.copyMakeBorder(target, top, down, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+        
+        img_h, img_w, channel = image.shape
+    
     h_off = random.randint(0, img_h - input_height)
     w_off = random.randint(0, img_w - input_width)
+        
     image = image[h_off:h_off+input_height, w_off:w_off+input_width, :]
     target = target[h_off:h_off+input_height, w_off:w_off+input_width]
     return image, target
@@ -146,7 +159,7 @@ if __name__ == '__main__':
 
     pbar = tqdm(train_loader, total=len(train_loader))
     for i, item in enumerate(pbar):
-        img, depth = item
+        img, _, depth = item
 
         np_depth = depth[0].cpu().numpy()
         cv2.imwrite('depth.jpg', np_depth)

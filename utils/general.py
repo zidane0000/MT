@@ -232,9 +232,9 @@ from utils.cityscapes import Create_Cityscapes
 from utils.kitti import Create_Kitti
 def create_dataloader(params, mode='train', rank=-1):    
     if params.root.lower().find('cityscapes') > 0:
-        dataset, dataloader = Create_Cityscapes(params, mode='train', rank=-1)
+        dataset, dataloader = Create_Cityscapes(params, mode=mode, rank=-1)
     elif params.root.lower().find('kitti') > 0:
-        dataset, dataloader = Create_Kitti(params, mode='train', rank=-1)
+        dataset, dataloader = Create_Kitti(params, mode=mode, rank=-1)
     return dataset, dataloader
 
 

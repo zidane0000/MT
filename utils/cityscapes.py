@@ -152,7 +152,7 @@ class Cityscapes(Dataset):
         if target_type == 'instance':
             return '{}_instanceIds.png'.format(mode)
         elif target_type == 'semantic':
-            return '{}_labelTrainIds.png'.format(mode)
+            return '{}_labelIds'.format(mode) # labelIds -> [0. - 18. 255.] / labelTrainIds -> [0. 1. 2. 3. 4. 5. 255.]
             # return '{}_labelIds.png'.format(mode)
         elif target_type == 'color':
             return '{}_color.png'.format(mode)

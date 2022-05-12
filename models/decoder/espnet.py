@@ -349,7 +349,7 @@ class ESPNet(nn.Module):
     This class defines the ESPNet network
     '''
 
-    def __init__(self, classes=20, p=2, q=3, encoderFile=None):
+    def __init__(self, params, p=2, q=3, encoderFile=None):
         '''
         :param classes: number of classes in the dataset. Default is 20 for the cityscapes
         :param p: depth multiplier
@@ -358,6 +358,8 @@ class ESPNet(nn.Module):
                             RUM-based light weight decoder. See paper for more details.
         '''
         super().__init__()
+        classes = params.num_classes
+        
         self.encoder = ESPNet_Encoder(classes, p, q)
         if encoderFile != None:
             self.encoder.load_state_dict(torch.load(encoderFile))

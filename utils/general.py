@@ -13,6 +13,9 @@ from pathlib import Path
 
 # Inherit from CCNet
 def id2trainId(label, classes, reverse=False):
+    if not reverse and max(np.unique(label)) < 19:
+        print('Check label is labelIds or labelTrainIds, if labelTrainIds then no need to transform')
+        input()
     ignore_label = 255
     id_to_trainid={-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
                     3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,

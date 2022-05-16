@@ -96,8 +96,7 @@ class Cityscapes(Dataset):
                 if file_name.find('.png') > -1: # Only accept png file
                     target_types = []
                     for t in self.target_type:
-                        target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                     self._get_target_suffix(self.mode, t))
+                        target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0], self._get_target_suffix(self.mode, t))
                         target_types.append(os.path.join(target_dir, target_name))
 
                     self.images.append(os.path.join(img_dir, file_name))
@@ -112,7 +111,8 @@ class Cityscapes(Dataset):
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
         
         smnt = cv2.imread(self.targets[index][0], cv2.IMREAD_GRAYSCALE)
-        smnt = id2trainId(smnt, self.num_classes)
+        if self.targets[index][0].endswith('_labelIds.png'):
+            smnt = id2trainId(smnt, self.num_classes)
         
         depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
         
@@ -152,8 +152,8 @@ class Cityscapes(Dataset):
         if target_type == 'instance':
             return '{}_instanceIds.png'.format(mode)
         elif target_type == 'semantic':
-            # return '{}_labelTrainIds.png'.format(mode) # labelTrainIds -> [0. - 18. 255.] -> id2trainId -> [0. 1. 2. 3. 4. 5. 255.]
-            return '{}_labelIds.png'.format(mode) # labelIds -> [0. - 33. -1.] -> id2trainID -> [0. - 18. 255.]
+            return '{}_labelTrainIds.png'.format(mode) # labelTrainIds -> [0. - 18. 255.] -> id2trainId -> [0. 1. 2. 3. 4. 5. 255.]
+            # return '{}_labelIds.png'.format(mode) # labelIds -> [0. - 33. -1.] -> id2trainID -> [0. - 18. 255.]
         elif target_type == 'color':
             return '{}_color.png'.format(mode)
         elif target_type == 'disparity':
@@ -228,7 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
     params = parser.parse_args()
-    train_dataset, train_loader = Create_Cityscapes(params, mode='val')
+    train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 
     pbar = tqdm(train_loader, total=len(train_loader))
     for i, item in enumerate(pbar):
@@ -247,4 +247,4 @@ if __name__ == '__main__':
 
 #         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
 #         cv2.imwrite('img.jpg', np_img)
-        input()
+#         input()

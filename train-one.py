@@ -17,7 +17,7 @@ from tqdm import tqdm
 from val import val_one as val
 from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu, create_dataloader
 
-model_type = 'yolor'.lower()
+model_type = 'hrnet'.lower()
 if model_type in ['ccnet','espnet', 'hrnet']: 
     task = 'smnt'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
@@ -25,7 +25,7 @@ if model_type in ['ccnet','espnet', 'hrnet']:
     if model_type == 'espnet':
         from models.decoder.espnet import ESPNet as OneModel
     elif model_type == 'hrnet':
-        from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+        from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg as hrnet_cfg
 elif model_type.lower() in ['bts','yolor']:
     task = 'depth'
     from utils.loss import silog_loss as ComputeLoss
@@ -58,7 +58,7 @@ def train(params):
     LOGGER.info("begin to bulid up model...")
     
     pretrained = (params.pretrain is not None) and (params.pretrain.endswith('.pt'))
-    cfg = cfg if model_type == 'HighResolutionNet' else params
+    cfg = hrnet_cfg if model_type == 'hrnet' else params
     if pretrained:
         model = OneModel(cfg).to(device)
         ckpt = torch.load(params.pretrain, map_location=device)  # load checkpoint

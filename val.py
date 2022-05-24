@@ -206,7 +206,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             if model_type == 'espnet':
                 from models.decoder.espnet import ESPNet as OneModel
             elif model_type == 'hrnet':
-                from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg
+                from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg as hrnet_cfg
         elif model_type.lower() in ['bts','yolor']:  
             task = 'depth'
             if model_type == 'bts':
@@ -217,7 +217,8 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
         device = select_device(params.device)
         LOGGER.info("begin load model with ckpt...")
         ckpt = torch.load(params.weight)
-        model = OneModel(params)
+        cfg = hrnet_cfg if model_type == 'hrnet' else params
+        model = OneModel(cfg)
         if device != 'cpu' and torch.cuda.device_count() > 1:
             LOGGER.info("use multi-gpu, device=" + params.device)
             device_ids = [int(i) for i in params.device.split(',')]

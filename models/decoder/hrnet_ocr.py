@@ -36,7 +36,7 @@ cfg = EasyDict({
         'NAME': 'seg_hrnet_ocr',
         'ALIGN_CORNERS': True,
         'NUM_OUTPUTS': 2,
-        'PRETRAINED': '',
+        'PRETRAINED': 'models/decoder/hrnetv2_w48_imagenet_pretrained.pth',
         'EXTRA':{
             'FINAL_CONV_KERNEL': 1,
             'STAGE1':{
@@ -550,6 +550,8 @@ class HighResolutionNet(nn.Module):
             nn.Conv2d(last_inp_channels, config.DATASET.NUM_CLASSES,
                       kernel_size=1, stride=1, padding=0, bias=True)
         )
+        
+        self.init_weights(cfg.MODEL.PRETRAINED)
         
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):

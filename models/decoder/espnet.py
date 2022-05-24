@@ -1,4 +1,5 @@
 # https://github.com/sacmehta/ESPNet/blob/master/train/Model.py
+import argparse
 import torch
 import torch.nn as nn
 
@@ -440,8 +441,13 @@ class ESPNet_Decoder(nn.Module):
 
     
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()    
+    # Semantic Segmentation
+    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)    
+    params = parser.parse_args()
+    
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    model = ESPNet(classes=19).to(device)
+    model = ESPNet(params).to(device)
     encoder = ESPNet_Encoder(classes=19).to(device)
     decoder = ESPNet_Decoder(classes=19, input_channels=encoder.feat_out_channels).to(device)
     print("load model to device")
@@ -453,4 +459,7 @@ if __name__ == '__main__':
     result = decoder(encoder_output)
     
     print("pass")
-    summary(model, (3, 32, 32), device=device)
+    
+    print("Try load pretrained")
+    ckpt = torch.load('models/decoder/espnet_p_2_q_3.pth')
+    model.load_state_dict(ckpt)

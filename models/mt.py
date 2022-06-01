@@ -7,14 +7,14 @@ from torchsummary import summary
 
 try:
     from .encoder import encoder
-    from .yolo import YOLOR_backbone
+    from .yolo import YOLOR_backbone, Detect, IDetect
     from .decoder.ccnet import CCNet, RCCAModule
     from .decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from .decoder.bts import bts, bts_4channel
     from .decoder.espnet import ESPNet_Decoder
 except:
     from encoder import encoder
-    from yolo import YOLOR_backbone
+    from yolo import YOLOR_backbone, Detect, IDetect
     from decoder.ccnet import CCNet, RCCAModule
     from decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from decoder.bts import bts, bts_4channel
@@ -41,7 +41,7 @@ class MTmodel(nn.Module):
         elif self.semantic_head == "hrnet":
             self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
         elif self.semantic_head == "espnet":
-            self.semantic_decoder= ESPNet_Decoder(classes=params.num_classes, input_channels=self.encoder.feat_out_channels[:3])
+            self.semantic_decoder = ESPNet_Decoder(classes=params.num_classes, input_channels=self.encoder.feat_out_channels[:3])
         else:
             raise Exception(f'ERROR: Unkown Semnatic head {self.semantic_head}')
 
@@ -51,6 +51,9 @@ class MTmodel(nn.Module):
             self.depth_decoder = bts_4channel(params, self.encoder.feat_out_channels, bts_size)
         else:
             self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
+            
+        # Object detection
+        self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels)
 
     def forward(self, x):
         feature_maps = self.encoder(x) # five feature maps
@@ -65,6 +68,9 @@ class MTmodel(nn.Module):
 
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(feature_maps)
         res.append(final_depth)
+        
+        objs = self.object_detection_decoder(feature_maps[-4:])
+        res.append(objs)
         
         return res
 
@@ -96,6 +102,7 @@ if __name__ == '__main__':
         print('for HRNet')
     
     ran = torch.rand((4, 3, 384, 768)).to(device)    
-    model.forward(ran)
+    output = model.forward(ran)
+    print(len(output[-1]))
     print("pass")
     

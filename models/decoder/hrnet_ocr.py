@@ -718,9 +718,8 @@ class HighResolutionNet(nn.Module):
             pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
             print('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
-            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}  
-            print(set(model_dict) - set(pretrained_dict))            
-            print(set(pretrained_dict) - set(model_dict))            
+            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}
+            print(f'inhert : {len(set(model_dict) & set(pretrained_dict))} / {len(set(pretrained_dict))}')
             pretrained_dict = {k: v for k, v in pretrained_dict.items()
                                if k in model_dict.keys()}
             # for k, _ in pretrained_dict.items():
@@ -785,6 +784,8 @@ class HighResolutionEncoder(nn.Module):
             pre_stage_channels, num_channels)
         self.stage4, pre_stage_channels = self._make_stage(
             self.stage4_cfg, num_channels, multi_scale_output=True)
+        
+        self.init_weights(cfg.MODEL.PRETRAINED)
         
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
@@ -926,9 +927,8 @@ class HighResolutionEncoder(nn.Module):
             pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
             print('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
-            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}  
-            print(set(model_dict) - set(pretrained_dict))            
-            print(set(pretrained_dict) - set(model_dict))            
+            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}
+            print(f'inhert : {len(set(model_dict) & set(pretrained_dict))} / {len(set(pretrained_dict))}')
             pretrained_dict = {k: v for k, v in pretrained_dict.items()
                                if k in model_dict.keys()}
             # for k, _ in pretrained_dict.items():
@@ -976,7 +976,9 @@ class HighResolutionDecoder(nn.Module):
             nn.ReLU(inplace=relu_inplace),
             nn.Conv2d(last_inp_channels, config.DATASET.NUM_CLASSES,
                       kernel_size=1, stride=1, padding=0, bias=True)
-        )        
+        )
+        
+        self.init_weights(cfg.MODEL.PRETRAINED)
    
     def forward(self, x):  # # [ torch.Size([Batch_size, 64, H/2, W/2]), torch.Size([Batch_size, 48, H/4, W/4]), torch.Size([Batch_size, 96, H/8, W/8]), torch.Size([Batch_size, 192, H/16, W/16]), torch.Size([Batch_size, 384, H/32, W/32]) ]
         # Upsampling
@@ -1022,9 +1024,8 @@ class HighResolutionDecoder(nn.Module):
             pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
             print('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
-            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}  
-            print(set(model_dict) - set(pretrained_dict))            
-            print(set(pretrained_dict) - set(model_dict))            
+            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}    
+            print(f'inhert : {len(set(model_dict) & set(pretrained_dict))} / {len(set(pretrained_dict))}')
             pretrained_dict = {k: v for k, v in pretrained_dict.items()
                                if k in model_dict.keys()}
             # for k, _ in pretrained_dict.items():
@@ -1044,7 +1045,7 @@ def get_seg_model(cfg, **kwargs):
 
 
 if __name__ == '__main__':
-    # python -m torch.distributed.launch --nproc_per_node=1 models/decoder/hrnet_ocr.py    
+    # python -m torch.distributed.launch --nproc_per_node=1 models/decoder/hrnet_ocr.py
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = get_seg_model(cfg).to(device)
     print("load model to device")

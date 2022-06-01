@@ -4,6 +4,7 @@ import re
 import glob
 import numpy as np
 import math
+import cv2
 import torch
 import torch.nn as nn
 import psutil
@@ -226,6 +227,29 @@ def safety_cpu(max=20):
     if cpu > max:
         print(f'Warning : cpu usage {cpu} is bigger then {max}')
         input()
+
+
+def xywh2xyxy(label): # xywh is center xy, width, height, xyxy is top-left point and down-right point
+    c, x, y, w, h = label.clone() if isinstance(label, torch.Tensor) else np.copy(label)
+    label[1] = x - w / 2
+    label[2] = y + h / 2
+    label[3] = x + w / 2
+    label[4] = y - h / 2
+    return label
+
+
+def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):
+    if len(labels) > 0:
+        img = img.copy()
+        img_h, img_w, ch = img.shape
+        for (c, x, y, w, h) in labels:
+            w_off = (img_w * w) / 2
+            h_off = (img_h * h) / 2
+            p1 = (int(img_w * x) - w_off, int(img_h * y) - h_off)
+            p2 = (int(img_w * x) + w_off, int(img_h * y) + h_off)
+            cv2.putText(img, str(int(c)), (p1[0], p1[1] - 2), cv2.FONT_HERSHEY_COMPLEX, 1, txt_color)
+            cv2.rectangle(img, p1, p2, color)
+    return img
 
 
 from utils.cityscapes import Create_Cityscapes

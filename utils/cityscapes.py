@@ -116,7 +116,7 @@ class Cityscapes(Dataset):
         depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
 
         labels = np.zeros((0, 5), dtype=np.float32)
-        label_path = self.targets[index][2]        
+        label_path = self.targets[index][2]
         if os.path.isfile(label_path):
             with open(label_path) as f:
                 labels = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h
@@ -132,15 +132,20 @@ class Cityscapes(Dataset):
             image = self.transform(image)
             (smnt, depth) = self.transform((smnt, depth))
             labels = self.transform(labels)
-        
+            
+        num_labels = len(labels)  # number of labels
+        labels_out = torch.zeros((num_labels, 6))
+        if num_labels:
+            labels_out[:, 1:] = torch.from_numpy(labels)
+                
         # (w, h, channel) -> (channel, w, h) and reszie if no random crop
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
         image = np.moveaxis(image, -1, 0)
 
         smnt = cv2.resize(smnt, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)                        
+        depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         
-        return torch.from_numpy(image), torch.from_numpy(smnt), torch.from_numpy(depth), torch.from_numpy(labels)
+        return torch.from_numpy(image), torch.from_numpy(smnt), torch.from_numpy(depth), labels_out
 
     def __len__(self) -> int:
         return len(self.images)
@@ -165,13 +170,17 @@ class Cityscapes(Dataset):
             return '{}_color.png'.format(mode)
         elif target_type == 'disparity':
             return 'disparity.png'
-        elif target_type == 'label':
+        elif target_type == 'label':#
             return 'leftImg8bit.txt'
 
 
 def collate_fn(batch):
-    images, smnts, depths = zip(*batch)
-    return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0)
+    images, smnts, depths, labels = zip(*batch)
+    
+    for i, l in enumerate(labels):
+        l[:, 0] = i  # add target image index for build_targets()
+        
+    return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0), torch.cat(labels, 0)
 
 
 def Create_Cityscapes(params, mode='train', rank=-1):
@@ -195,7 +204,8 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                     num_workers=workers,
                     shuffle=True and sampler is None,
                     sampler=sampler,
-                    pin_memory=True)
+                    pin_memory=True,
+                    collate_fn=collate_fn)
     
     return dataset, dataloader
 
@@ -265,6 +275,8 @@ if __name__ == '__main__':
     pbar = tqdm(train_loader, total=len(train_loader))
     for i, item in enumerate(pbar):
         img, smnt, depth, labels = item
+        print(labels.shape)
+        print(labels[:5])
         
 #         np_smnt = smnt[0].cpu().numpy()
 #         np_smnt = id2trainId(np_smnt, 255, reverse=True)
@@ -277,9 +289,9 @@ if __name__ == '__main__':
 #         heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
 #         cv2.imwrite('heat.jpg', heat_depth)
 
-        np_img = (img[0]).cpu().numpy().transpose(1,2,0)
-        cv2.imwrite('img.jpg', np_img)
-
-        np_img = plot_xywh(np_img, labels[0])
-        cv2.imwrite('np_img.jpg', np_img)
+#         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+#         cv2.imwrite('img.jpg', np_img)
+        
+#         np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])
+#         cv2.imwrite('np_img.jpg', np_img)
         input()

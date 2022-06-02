@@ -52,7 +52,7 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
     # mean loss
     mean_loss = torch.zeros(1, device=device)
     for i, item in pbar:
-        img, smnt, depth = item
+        img, smnt, depth, labels = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         smnt = smnt.to(device)
         depth = depth.to(device)
@@ -261,12 +261,16 @@ if __name__ == '__main__':
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
 
     # Semantic Segmentation
-    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
-
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
+    
+    # Object detection
+    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')  
     params = parser.parse_args()
     
     # Directories

@@ -121,7 +121,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
-        img, smnt, depth = item
+        img, smnt, depth, labels = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         smnt = smnt.to(device)
         depth = depth.to(device)
@@ -248,7 +248,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
-        img, smnt, depth = item
+        img, smnt, depth, labels = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
         
         if task == "depth":
@@ -358,6 +358,10 @@ if __name__ == '__main__':
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
+    
+    # Object detection
+    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
     params = parser.parse_args()
     
     params.model_type = params.model_type.lower()

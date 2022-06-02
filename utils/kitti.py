@@ -65,6 +65,9 @@ class Kitti(Dataset):
         depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)        
         assert depth is not None, f'No images found in {self.targets[index]}'
         
+        labels = np.zeros((0, 5), dtype=np.float32)
+        print('Undone Labels')
+        
         if self.random_crop:
             image, depth = do_random_crop(image, depth, self.width, self.height)
 
@@ -75,13 +78,18 @@ class Kitti(Dataset):
             image = self.transform(image)
             depth = self.transform(depth)
         
+        num_labels = len(labels)  # number of labels
+        labels_out = torch.zeros((num_labels, 6))
+        if num_labels:
+            labels_out[:, 1:] = torch.from_numpy(labels)
+           
         # (w, h, channel) -> (channel, w, h) and reszie if no random crop
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
         image = np.moveaxis(image, -1, 0)
 
         depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         
-        return torch.from_numpy(image), torch.zeros(1), torch.from_numpy(depth)
+        return torch.from_numpy(image), torch.zeros(1), torch.from_numpy(depth), labels_out
 
     def __len__(self) -> int:
         return len(self.images)

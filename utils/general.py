@@ -252,15 +252,17 @@ def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):
     return img
 
 
-from utils.cityscapes import Create_Cityscapes
-from utils.kitti import Create_Kitti
-def create_dataloader(params, mode='train', rank=-1):    
-    if params.root.lower().find('cityscapes') > 0:
-        dataset, dataloader = Create_Cityscapes(params, mode=mode, rank=-1)
-    elif params.root.lower().find('kitti') > 0:
-        dataset, dataloader = Create_Kitti(params, mode=mode, rank=-1)
-    return dataset, dataloader
-
+try:
+    from utils.cityscapes import Create_Cityscapes
+    from utils.kitti import Create_Kitti
+    def create_dataloader(params, mode='train', rank=-1):
+        if params.root.lower().find('cityscapes') > 0:
+            dataset, dataloader = Create_Cityscapes(params, mode=mode, rank=-1)
+        elif params.root.lower().find('kitti') > 0:
+            dataset, dataloader = Create_Kitti(params, mode=mode, rank=-1)
+        return dataset, dataloader
+except:
+    print('No create_dataloader')
 
 if __name__ == '__main__':
     print(get_palette(255))

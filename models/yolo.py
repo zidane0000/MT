@@ -2,19 +2,21 @@ import argparse
 import logging
 import math
 import sys
-from copy import deepcopy
-from pathlib import Path
-
+import pkg_resources as pkg
 import math
 import yaml
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from copy import deepcopy
+from pathlib import Path
+
 try:
     import thop  # for FLOPs computation
 except ImportError:
     thop = None
+
 
 # Inherit from torch_utils
 def initialize_weights(model):
@@ -52,7 +54,7 @@ def model_info(model, verbose=False, img_size=640):
 
     print(f"Model Summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
 
-    
+
 # Inherit from autoanchor
 def check_anchor_order(m):
     # Check anchor order against stride order for Detect() module m, and correct if necessary
@@ -63,7 +65,7 @@ def check_anchor_order(m):
         LOGGER.info(f'{PREFIX}Reversing anchor order')
         m.anchors[:] = m.anchors.flip(0)
 
-    
+
 # Inherit from common
 class ReOrg(nn.Module):
     def __init__(self):
@@ -150,7 +152,7 @@ class SPPCSP(nn.Module):
         self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
         self.cv5 = Conv(4 * c_, c_, 1, 1)
         self.cv6 = Conv(c_, c_, 3, 1)
-        self.bn = nn.BatchNorm2d(2 * c_) 
+        self.bn = nn.BatchNorm2d(2 * c_)
         self.act = nn.SiLU()
         self.cv7 = Conv(2 * c_, c2, 1, 1)
 
@@ -169,7 +171,7 @@ class BottleneckCSP2(nn.Module):
         self.cv1 = Conv(c1, c_, 1, 1)
         self.cv2 = nn.Conv2d(c_, c_, 1, 1, bias=False)
         self.cv3 = Conv(2 * c_, c2, 1, 1)
-        self.bn = nn.BatchNorm2d(2 * c_) 
+        self.bn = nn.BatchNorm2d(2 * c_)
         self.act = nn.SiLU()
         self.m = nn.Sequential(*[Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)])
 
@@ -287,10 +289,10 @@ class Depth(nn.Module):
         self.register_buffer('anchors', a)  # shape(nl,na,2)
         self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        
+
         self.ia = nn.ModuleList(ImplicitA(x) for x in ch)
         self.im = nn.ModuleList(ImplicitM(self.no * self.na) for _ in ch)
-        
+
 #         self.depth_decoder = bts(params, ch_depth)
         self.depth_decoder = bts_4channel(params, ch)
 
@@ -303,7 +305,7 @@ class Depth(nn.Module):
         for part_x in x:
             x_interpolate.append(F.interpolate(part_x, size=(part_x.size(2)*4, part_x.size(3)*4), mode='bilinear', align_corners=True))
         depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(x_interpolate)
-        
+
         for i in range(self.nl):
             x[i] = self.im[i](self.m[i](self.ia[i](x[i])))  # conv
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
@@ -317,7 +319,7 @@ class Depth(nn.Module):
 #                 y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
 #                 y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
 #                 z.append(y.view(bs, -1, self.no))
-        
+
         x.append(final_depth)
         return x
 #         return x if self.training else (torch.cat(z, 1), x)
@@ -326,7 +328,7 @@ class Depth(nn.Module):
     def _make_grid(nx=20, ny=20):
         yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
         return torch.stack((xv, yv), 2).view((1, 1, ny, nx, 2)).float()
-    
+
 
 class Backbone(nn.Module):
     stride = None  # strides computed during build
@@ -342,7 +344,17 @@ class Backbone(nn.Module):
             x_interpolate.append(F.interpolate(part_x, size=(part_x.size(2)*4, part_x.size(3)*4), mode='bilinear', align_corners=True))
         return x_interpolate
 
-    
+
+def check_version(current='0.0.0', minimum='0.0.0', name='version ', pinned=False, hard=False):
+    # Check version vs. required version
+    current, minimum = (pkg.parse_version(x) for x in (current, minimum))
+    result = (current == minimum) if pinned else (current >= minimum)  # bool
+    if hard:  # assert min requirements met
+        assert result, f'{name}{minimum} required by YOLOR, but {name}{current} is currently installed'
+    else:
+        return result
+
+
 class Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
@@ -405,7 +417,7 @@ class IDetect(nn.Module):
                  anchors=[[19, 27, 44, 40, 38, 94], [96, 68, 86, 152, 180, 137], [140, 301, 303, 264, 238, 542], [436, 615, 739, 380, 925, 792]],
                  ch=()):  # detection layer
         super(IDetect, self).__init__()
-        
+
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers
@@ -415,7 +427,7 @@ class IDetect(nn.Module):
         self.register_buffer('anchors', a)  # shape(nl,na,2)
         self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        
+
         self.ia = nn.ModuleList(ImplicitA(x) for x in ch)
         self.im = nn.ModuleList(ImplicitM(self.no * self.na) for _ in ch)
 
@@ -433,6 +445,7 @@ class IDetect(nn.Module):
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
 
                 y = x[i].sigmoid()
+                self.grid[i] = self.grid[i].to(y.device)
                 y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                 y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                 z.append(y.view(bs, -1, self.no))
@@ -465,10 +478,14 @@ class YOLOR(nn.Module):
         # Build strides, anchors
         m = self.model[-1]  # Detect()
         self.feat_out_channels = m.ch # For Backbone to let mt know out channels
-        if isinstance(m, IDetect):
+        if isinstance(m, Detect):
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
             m.anchors /= m.stride.view(-1, 1, 1)
+            check_anchor_order(m)
+            self.stride = m.stride
+            self._initialize_biases()  # only run once
+        if isinstance(m, IDetect):
             check_anchor_order(m)
             self.stride = m.stride
             self._initialize_biases()  # only run once
@@ -561,14 +578,14 @@ class YOLOR(nn.Module):
         dt.append((time_sync() - t) * 100)
         if m == self.model[0]:
             print(f"{'time (ms)':>10s} {'GFLOPs':>10s} {'params':>10s} {' '*12 + 'output shape' + ' '*12 + 'module'}")
-        
+
         if type(out) is list:
             print(f'{dt[-1]:10.2f} {o:10.2f} {m.np:10.0f} {str(out[0].shape):35s} {m.type}')
             for i in range(1, len(out)):
                 print(' '* 33 + str(out[i].shape))
         else:
             print(f'{dt[-1]:10.2f} {o:10.2f} {m.np:10.0f} {str(out.shape):35s} {m.type}')
-        
+
         if c:
             print(f"{sum(dt):10.2f} {'-':>10s} {'-':>10s} {' '*35} Total")
 
@@ -675,7 +692,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
-    
+
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
@@ -683,7 +700,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     params.yaml = 'models/yolor-p6-backbone.yaml'
-    
+
     # Create model
     model = YOLOR(params).to(device)
     model.train()

@@ -39,6 +39,7 @@ def train(params):
     # Model
     LOGGER.info("begin to bulid up model...")
     model = MTmodel(params).to(device)
+    obj_head = model.object_detection_decoder
     LOGGER.info("load model to device")
 
     # Optimizer
@@ -86,7 +87,7 @@ def train(params):
     train_dataset, train_loader = Create_Cityscapes(params, mode='train', rank=LOCAL_RANK)
 
     # loss
-    compute_loss = ComputeLoss()
+    compute_loss = ComputeLoss(obj_head)
     smnt_loss_history = []
     depth_loss_history = []
     smnt_val_loss_history = []
@@ -107,17 +108,18 @@ def train(params):
             pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar        
 
         # mean loss
-        mean_loss = torch.zeros(2, device=device)
+        mean_loss = torch.zeros(3, device=device)
         for i, item in pbar:
             img, smnt, depth, labels = item
             img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
             smnt = smnt.to(device)
             depth = depth.to(device)
+            labels = labels.to(device)
 
             optimizer.zero_grad()
 
             output = model(img)
-            loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
+            loss, (smnt_loss, depth_loss, obj_loss) = compute_loss(output, (smnt, depth, labels))
             
             if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -128,9 +130,9 @@ def train(params):
             if RANK in [-1, 0]: # Process 0
                 safety_cpu(params.max_cpu)
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss)).detach()) / (i + 1)
-                pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g') % (
-                        f'{epoch}/{epochs - 1}', mem, mean_loss[0], mean_loss[1]))        
+                mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss, obj_loss)).detach()) / (i + 1)
+                pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g' + '      obj:%6.6g') % (
+                        f'{epoch}/{epochs - 1}', mem, mean_loss[0], mean_loss[1], mean_loss[2]))        
         scheduler.step()
         
         if RANK in [-1, 0]: # Process 0

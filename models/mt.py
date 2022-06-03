@@ -1,4 +1,5 @@
 import argparse
+import math
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -56,7 +57,26 @@ class MTmodel(nn.Module):
         # Object detection
         self.obj_head = params.obj_head.lower()
         if self.obj_head == "yolo":
-            self.object_detection_decoder = Detect(ch=self.encoder.feat_out_channels)
+            self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels)
+            m = self.object_detection_decoder            
+            s = 256  # 2x min stride
+            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, 3, s, s))[-1]])  # forward
+            m.anchors /= m.stride.view(-1, 1, 1)
+            
+            # Check anchor order against stride order for Detect() module m, and correct if necessary
+            a = m.anchors.prod(-1).view(-1)  # anchor area
+            da = a[-1] - a[0]  # delta a
+            ds = m.stride[-1] - m.stride[0]  # delta s
+            if da.sign() != ds.sign():  # same order
+                print('obj_head Reversing anchor order')
+                m.anchors[:] = m.anchors.flip(0)
+            
+            # initialize_biases -> https://arxiv.org/abs/1708.02002 section 3.3
+            for mi, s in zip(m.m, m.stride):  # from
+                b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
+                b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+                b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999))  # cls
+                mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def forward(self, x):
         feature_maps = self.encoder(x) # five feature maps
@@ -81,7 +101,7 @@ class MTmodel(nn.Module):
             res.append(objs)
         
         return res
-
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -114,15 +134,17 @@ if __name__ == '__main__':
         print('for HRNet')
     
     ran = torch.rand((4, 3, 384, 768)).to(device)    
-    output = model.forward(ran)    
-#     compute_loss = YOLO_loss(model.object_detection_decoder)    
+    output = model.forward(ran)
 #     import numpy as np
 #     np_gt = np.array([[0.0000, 1.0000, 0.9133, 0.6596, 0.1730, 0.4393],
 #         [0.0000, 0.0000, 0.5708, 0.5646, 0.0811, 0.4289],
-#         [0.0000, 2.0000, 0.0624, 0.5888, 0.1236, 0.4186],
-#         [0.0000, 0.0000, 0.6451, 0.5520, 0.0659, 0.3423],
-#         [0.0000, 2.0000, 0.1249, 0.5369, 0.0716, 0.2202]])
+#         [1.0000, 2.0000, 0.0624, 0.5888, 0.1236, 0.4186],
+#         [1.0000, 0.0000, 0.6451, 0.5520, 0.0659, 0.3423],
+#         [2.0000, 2.0000, 0.1249, 0.5369, 0.0716, 0.2202],
+#         [3.0000, 2.0000, 0.1249, 0.5369, 0.0716, 0.2202],])
 #     gt = torch.from_numpy(np_gt).to(device)
-#     print(compute_loss(output[-1], gt))    
+    
+#     obj_out, obj_train_out = output[-1]
+    
     print("pass")
     

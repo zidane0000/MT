@@ -309,7 +309,7 @@ class YOLO_loss:
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
 
-        return (lbox + lobj + lcls), torch.cat((lbox, lobj, lcls)).detach()
+        return lbox + lobj + lcls
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
@@ -372,19 +372,22 @@ class YOLO_loss:
         
 
 class ComputeLoss:
-    def __init__(self):
+    def __init__(self, obj_head):
         super(ComputeLoss, self).__init__()
         self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
         self.depth_loss_function = silog_loss()
+        self.obj_loss_function = YOLO_loss(obj_head)
     
     def __call__(self, predicts, targets):
-        (predict_smnt, predict_depth) = predicts
-        (target_smnt, target_depth) = targets
+        (predict_smnt, predict_depth, predict_obj) = predicts
+        (target_smnt, target_depth, target_obj) = targets
 
         depth_loss = self.depth_loss_function(predict_depth, target_depth)
         depth_loss = torch.unsqueeze(depth_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
         
         smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
         smnt_loss = torch.unsqueeze(smnt_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+        
+        obj_loss = self.obj_loss_function(predict_obj, target_obj)    
 
-        return (smnt_loss + depth_loss), (smnt_loss, depth_loss)
+        return (smnt_loss + depth_loss + obj_loss), (smnt_loss, depth_loss, obj_loss)

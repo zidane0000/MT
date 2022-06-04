@@ -229,13 +229,22 @@ def safety_cpu(max=20):
         input()
 
 
-def xywh2xyxy(label): # xywh is center xy, width, height, xyxy is top-left point and down-right point
-    c, x, y, w, h = label.clone() if isinstance(label, torch.Tensor) else np.copy(label)
-    label[1] = x - w / 2
-    label[2] = y + h / 2
-    label[3] = x + w / 2
-    label[4] = y - h / 2
-    return label
+def xywh2xyxy(x): # xywh is center xy, width, height, xyxy is top-left point and down-right point
+    dim = x.dim if isinstance(x, torch.Tensor) else x.ndim
+    if dim == 1:
+        y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+        c, _, _, _, _ = y
+        y[1] = x[1] - x[3] / 2  # top left x
+        y[2] = x[2] - x[4] / 2  # top left y
+        y[3] = x[1] + x[3] / 2  # bottom right x
+        y[4] = x[2] + x[4] / 2  # bottom right y
+    else:
+        y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+        y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
+        y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
+        y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
+        y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    return y
 
 
 def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):

@@ -134,17 +134,6 @@ if __name__ == '__main__':
         print('for HRNet')
     
     ran = torch.rand((4, 3, 384, 768)).to(device)    
-    output = model.forward(ran)
-#     import numpy as np
-#     np_gt = np.array([[0.0000, 1.0000, 0.9133, 0.6596, 0.1730, 0.4393],
-#         [0.0000, 0.0000, 0.5708, 0.5646, 0.0811, 0.4289],
-#         [1.0000, 2.0000, 0.0624, 0.5888, 0.1236, 0.4186],
-#         [1.0000, 0.0000, 0.6451, 0.5520, 0.0659, 0.3423],
-#         [2.0000, 2.0000, 0.1249, 0.5369, 0.0716, 0.2202],
-#         [3.0000, 2.0000, 0.1249, 0.5369, 0.0716, 0.2202],])
-#     gt = torch.from_numpy(np_gt).to(device)
-    
-#     obj_out, obj_train_out = output[-1]
-    
+    output = model.forward(ran)    
     print("pass")
     

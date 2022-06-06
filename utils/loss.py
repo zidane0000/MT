@@ -308,8 +308,9 @@ class YOLO_loss:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        bs = tobj.shape[0]  # batch size
 
-        return lbox + lobj + lcls
+        return (lbox + lobj + lcls) * bs
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
@@ -372,11 +373,13 @@ class YOLO_loss:
         
 
 class ComputeLoss:
-    def __init__(self, obj_head):
+    def __init__(self, model):
         super(ComputeLoss, self).__init__()
         self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
         self.depth_loss_function = silog_loss()
-        self.obj_loss_function = YOLO_loss(obj_head)
+        
+        if model.object_detection_decoder:
+            self.obj_loss_function = YOLO_loss(model.object_detection_decoder)
     
     def __call__(self, predicts, targets):
         (predict_smnt, predict_depth, predict_obj) = predicts

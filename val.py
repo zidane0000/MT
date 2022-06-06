@@ -16,7 +16,7 @@ def compute_ccnet_eval(predicts, ground_truths, class_num):
         """
         Calcute the confusion matrix by given label and pred
         :param pred_label: the pred label
-        :param gt_label: the ground truth label        
+        :param gt_label: the ground truth label
         :param class_num: the numnber of class
         :return: the confusion matrix
         """
@@ -29,14 +29,14 @@ def compute_ccnet_eval(predicts, ground_truths, class_num):
                 if cur_index < len(label_count):
                     confusion_matrix[i_label, i_pred_label] = label_count[cur_index]
         return confusion_matrix
-    
+
     confusion_matrix = np.zeros((class_num, class_num))
     for i in range(len(predicts)):
         ignore_index = ground_truths[i] != 255
         predict_mask = predicts[i][ignore_index]
         ground_truth_mask = ground_truths[i][ignore_index]
         confusion_matrix += get_confusion_matrix(predict_mask, ground_truth_mask, class_num)
-    
+
     if torch.distributed.is_initialized():
         confusion_matrix = torch.from_numpy(confusion_matrix).cuda()
         reduced_confusion_matrix = reduce_tensor(confusion_matrix)
@@ -60,29 +60,29 @@ def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
         predicts[i][np.isnan(predicts[i])] = min_depth
 
         valid_mask = np.logical_and(ground_truths[i] > min_depth, ground_truths[i] < max_depth)
-        predict = predicts[i][valid_mask]        
+        predict = predicts[i][valid_mask]
         ground_truth = ground_truths[i][valid_mask]
 
         thresh = np.maximum((ground_truth / predict), (predict / ground_truth))
         d1[i] = (thresh < 1.25).mean()
         d2[i] = (thresh < 1.25 ** 2).mean()
         d3[i] = (thresh < 1.25 ** 3).mean()
-        
+
         tmp = (ground_truth - predict) ** 2
         rmse[i] = np.sqrt(tmp.mean())
-        
+
         tmp = (np.log(ground_truth) - np.log(predict)) ** 2
         rmse_log[i] = np.sqrt(tmp.mean())
-        
+
         abs_rel[i] = np.mean(np.abs(ground_truth - predict) / ground_truth)
         sq_rel[i] = np.mean(((ground_truth - predict) ** 2) / ground_truth)
-        
+
         err = np.log(predict) - np.log(ground_truth)
         silog[i] = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
-        
+
         err = np.abs(np.log10(predict) - np.log10(ground_truth))
         log10[i] = np.mean(err)
-    
+
     return silog.mean(), abs_rel.mean(), log10.mean(), rmse.mean(), sq_rel.mean(), rmse_log.mean(), d1.mean(), d2.mean(), d3.mean()
 
 
@@ -203,7 +203,7 @@ def get_batch_statistics(outputs, targets, iou_threshold):
 
         output = outputs[sample_i]
         output = output.to(targets.device)
-        pred_boxes = output[:, :4]
+        pred_boxes = output[:, :4] #xyxy
         pred_scores = output[:, 4]
         pred_labels = output[:, -1]
 
@@ -213,7 +213,7 @@ def get_batch_statistics(outputs, targets, iou_threshold):
         target_labels = annotations[:, 0] if len(annotations) else []
         if len(annotations):
             detected_boxes = []
-            target_boxes = annotations[:, 1:]
+            target_boxes = xywh2xyxy(annotations[:, 1:])
 
             for pred_i, (pred_box, pred_label) in enumerate(zip(pred_boxes, pred_labels)):
 
@@ -227,7 +227,7 @@ def get_batch_statistics(outputs, targets, iou_threshold):
 
                 # Filter target_boxes by pred_label so that we only match against boxes of our own label
                 filtered_target_position, filtered_targets = zip(*filter(lambda x: target_labels[x[0]] == pred_label, enumerate(target_boxes)))
-
+                
                 # Find the best matching target for our predicted box
                 iou, box_filtered_index = bbox_iou(pred_box.unsqueeze(0), torch.stack(filtered_targets)).max(0)
 
@@ -330,13 +330,10 @@ def compute_yolo_eval(predicts, ground_truths, conf_thres=0.25, nms_thres=0.4, i
     nms_thres     : IOU threshold for non-maximum suppression
     iou_thres     : IOU threshold required to qualify as detected
     """
-    iouv = torch.linspace(0.5, 0.95, 10).to(ground_truths.device)  # iou vector for mAP@0.5:0.95
-    niou = iouv.numel()
-    
     predicts = non_max_suppression(predicts, conf_thres=conf_thres, iou_thres=nms_thres)
-    batch_metrics = get_batch_statistics(predicts, ground_truths, iou_threshold=iou_thres)    
+    batch_metrics = get_batch_statistics(predicts, ground_truths, iou_threshold=iou_thres)
     return batch_metrics
-            
+
 
 def Concatenate_sample_statistics(sample_metrics, all_labels):
     """
@@ -369,7 +366,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         # if pt is save from multi-gpu, model need para first, see https://blog.csdn.net/qq_32998593/article/details/89343507
         model.load_state_dict(ckpt['model'])
         model.to(device)
-        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")        
+        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")
     model.eval()
 
     # Dataset, DataLoader
@@ -378,13 +375,16 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
 
     val_bar = enumerate(val_loader)
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-    
+
     # val result
-    mean_loss = torch.zeros(3, device=device)
+    mean_smnt_loss = torch.zeros(1, device=device)
+    mean_depth_loss = torch.zeros(1, device=device)
+    mean_obj_loss = torch.zeros(1, device=device)
     smnt_mean_iou_val = 0
     smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
     depth_val = np.zeros(9)
-    
+    obj_val = 0
+
     all_labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
 
@@ -398,17 +398,19 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
 
         with torch.no_grad():
             output = model(img)
-        
+
         (predict_smnt, predict_depth, (predict_obj, predict_train_obj)) = output
 
         if compute_loss:
             safety_cpu(params.max_cpu)
             loss, (smnt_loss, depth_loss, obj_loss) = compute_loss((predict_smnt, predict_depth, predict_train_obj), (smnt, depth, labels))
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            mean_loss = (mean_loss * i + torch.cat((smnt_loss, depth_loss, obj_loss)).detach()) / (i + 1)
+            mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
+            mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
+            mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)            
             val_bar.set_description((' '*16 + 'mem:%8s' + '  val-semantic:%6.6g' + '  val-depth:%6.6g' + '  val-obj:%6.6g') % (
-                                        mem, mean_loss[0], mean_loss[1], mean_loss[2]))
-                
+                                        mem, mean_smnt_loss, mean_depth_loss, mean_obj_loss))
+
         # upsample to origin size
         interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
         predict_smnt = interp(predict_smnt)
@@ -423,71 +425,72 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         np_predict_depth = predict_depth.cpu().numpy().squeeze().astype(np.float32)
         np_gt_depth = depth.cpu().numpy().astype(np.float32)
         depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
-                
+
         sample_metrics += compute_yolo_eval(predict_obj, labels)
-        
+
         if params.plot:
             np_gt_smnt = np_gt_smnt[0]
             np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
             np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
-            
+
             np_predict_smnt = np_predict_smnt[0]
             np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
             np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
 
             np_predict_depth = np_predict_depth[0]
             cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
-            
+
             heat_predict_depth = (np_predict_depth * 255).astype('uint8')
             heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
             cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
-            
+
             np_gt_depth = np_gt_depth[0]
             cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
-            
+
             heat_gt_depth = (np_gt_depth * 255).astype('uint8')
             heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
             cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
 
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
-    
+
     smnt_mean_iou_val /= len(val_bar)
     smnt_iou_array_val /= len(val_bar)
     depth_val /= len(val_bar)
-    
-    mean_percision, mean_recall, meam_ap = Concatenate_sample_statistics(sample_metrics, all_labels)
+
+    mean_percision, mean_recall, mean_ap = Concatenate_sample_statistics(sample_metrics, all_labels)
+    obj_val = mean_ap
 
     LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
     depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
     for i in range(len(depth_val_str)):
         LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
-    
+
     LOGGER.info('mean_percision : %5.3f' % (mean_percision))
     LOGGER.info('mean_recall    : %5.3f' % (mean_recall))
-    LOGGER.info('meam_ap        : %5.3f' % (meam_ap))
-        
+    LOGGER.info('mean_ap        : %5.3f' % (mean_ap))
+
     LOGGER.info('-'*45)
 
     if compute_loss:
-        return (mean_loss[0], mean_loss[1]), (smnt_mean_iou_val, smnt_iou_array_val), depth_val
+        return (mean_smnt_loss, mean_depth_loss, mean_obj_loss), (smnt_mean_iou_val, smnt_iou_array_val), depth_val, obj_val
     else:
-        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
-    
+        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val, obj_val
 
-def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):    
+
+def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
     if save_dir is None:
         save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
         LOGGER.info("saving to " + str(save_dir))
 
     if model is None:
-        if model_type in ['ccnet','espnet', 'hrnet']:  
+        if model_type in ['ccnet','espnet', 'hrnet']:
             task = 'smnt'
             if model_type == 'espnet':
                 from models.decoder.espnet import ESPNet as OneModel
             elif model_type == 'hrnet':
                 from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg as hrnet_cfg
-        elif model_type.lower() in ['bts','yolor']:  
+        elif model_type.lower() in ['bts','yolor']:
             task = 'depth'
             if model_type == 'bts':
                 from models.decoder.bts import BtsModel as OneModel
@@ -508,8 +511,8 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
         model.load_state_dict(ckpt['model'])
         model.to(device)
         LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")
-    model.eval()    
-    
+    model.eval()
+
     if task is None:
         LOGGER.info("No define Task")
         return None
@@ -520,7 +523,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
 
     val_bar = enumerate(val_loader)
     val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-    
+
     # val result
     mean_loss = torch.zeros(1, device=device)
     smnt_mean_iou_val = 0
@@ -530,7 +533,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
     for i, item in val_bar:
         img, smnt, depth, labels = item
         img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-        
+
         if task == "depth":
             gt = depth.to(device)
         elif task == "smnt":
@@ -560,12 +563,12 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
             smnt_mean_iou_val += miou
             smnt_iou_array_val += iou_array
-            
+
             if params.plot:
                 np_gt_smnt = np_gt_smnt[0]
                 np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
                 np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
-                
+
                 np_predict_smnt = np_predict_smnt[0]
                 np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
                 np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
@@ -573,7 +576,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             np_predict_depth = output.cpu().numpy().squeeze().astype(np.float32)
             np_gt_depth = depth.cpu().numpy().astype(np.float32)
             depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
-            
+
             if params.plot:
                 np_predict_depth = np_predict_depth[0]
                 cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
@@ -592,11 +595,11 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
         if params.plot:
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
-    
+
     smnt_mean_iou_val /= len(val_bar)
     smnt_iou_array_val /= len(val_bar)
     depth_val /= len(val_bar)
-    
+
     if task== "smnt":
         LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
     elif task == "depth":
@@ -627,10 +630,10 @@ if __name__ == '__main__':
     parser.add_argument('--plot',               action='store_true', help='plot the loss and eval result')
     parser.add_argument('--random-flip',        action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',        action='store_true', help='crop the image and target')
-    
+
     # MT or One
     parser.add_argument('--model_type',         type=str, default='mt', help='Choose Model Type by lower, mt or one model')
-    
+
     # Semantic Segmentation
     parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
@@ -638,12 +641,12 @@ if __name__ == '__main__':
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
-    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
-    
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts')
+
     # Object detection
     parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
     params = parser.parse_args()
-    
+
     params.model_type = params.model_type.lower()
     if params.model_type == 'mt':
         val(params=params)

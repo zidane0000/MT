@@ -36,7 +36,7 @@ cfg = EasyDict({
         'NAME': 'seg_hrnet_ocr',
         'ALIGN_CORNERS': True,
         'NUM_OUTPUTS': 2,
-        'PRETRAINED': 'models/decoder/hrnetv2_w48_imagenet_pretrained.pth',
+        'PRETRAINED': 'models/decoder/hrnetv2_w48_imagenet_pretrained.pth',  # hrnet_ocr_cs_8162_torch11
         'EXTRA':{
             'FINAL_CONV_KERNEL': 1,
             'STAGE1':{
@@ -697,11 +697,10 @@ class HighResolutionNet(nn.Module):
 
         out = self.cls_head(feats) # [Batch_size, 19, H/4, W/4]
         return out
-    
-        # out_aux_seg.append(out_aux)
-        # out_aux_seg.append(out)
+#         out_aux_seg.append(out_aux)
+#         out_aux_seg.append(out)
 
-        # return out_aux_seg
+#         return out_aux_seg
 
     def init_weights(self, pretrained='',):
         print('=> init weights from normal distribution')
@@ -980,7 +979,7 @@ class HighResolutionDecoder(nn.Module):
         
         self.init_weights(cfg.MODEL.PRETRAINED)
    
-    def forward(self, x):  # # [ torch.Size([Batch_size, 64, H/2, W/2]), torch.Size([Batch_size, 48, H/4, W/4]), torch.Size([Batch_size, 96, H/8, W/8]), torch.Size([Batch_size, 192, H/16, W/16]), torch.Size([Batch_size, 384, H/32, W/32]) ]
+    def forward(self, x):  # # x resolution maybe = [1/2, 1/4, 1/8, 1/16, 1/32]
         # Upsampling
         x0_h, x0_w = x[-4].size(2), x[-4].size(3)
         x1 = F.interpolate(x[-3], size=(x0_h, x0_w),
@@ -1010,7 +1009,7 @@ class HighResolutionDecoder(nn.Module):
         return out
 
     def init_weights(self, pretrained='',):
-        print('=> init weights from normal distribution')
+        print('=> semantic head init weights from normal distribution')
         for name, m in self.named_modules():
             if any(part in name for part in {'cls', 'aux', 'ocr'}):
                 # print('skipped', name)
@@ -1022,17 +1021,17 @@ class HighResolutionDecoder(nn.Module):
                 nn.init.constant_(m.bias, 0)
         if os.path.isfile(pretrained):
             pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
-            print('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
             pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}    
-            print(f'inhert : {len(set(model_dict) & set(pretrained_dict))} / {len(set(pretrained_dict))}')
-            pretrained_dict = {k: v for k, v in pretrained_dict.items()
-                               if k in model_dict.keys()}
-            # for k, _ in pretrained_dict.items():
-                # logger.info(
-                #     '=> loading {} pretrained model {}'.format(k, pretrained))
-            model_dict.update(pretrained_dict)
-            self.load_state_dict(model_dict)
+            inherit_num = len(set(model_dict) & set(pretrained_dict))
+            
+            if inherit_num > 0:            
+                print('=> loading pretrained model {} for semantic head'.format(pretrained))
+                print(f'inhert : {inherit_num} / {len(set(pretrained_dict))}')
+                pretrained_dict = {k: v for k, v in pretrained_dict.items()
+                                   if k in model_dict.keys()}
+                model_dict.update(pretrained_dict)
+                self.load_state_dict(model_dict)
         elif pretrained:
             raise RuntimeError('No such file {}'.format(pretrained))
 

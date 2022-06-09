@@ -227,7 +227,7 @@ def get_batch_statistics(outputs, targets, iou_threshold):
 
                 # Filter target_boxes by pred_label so that we only match against boxes of our own label
                 filtered_target_position, filtered_targets = zip(*filter(lambda x: target_labels[x[0]] == pred_label, enumerate(target_boxes)))
-                
+
                 # Find the best matching target for our predicted box
                 iou, box_filtered_index = bbox_iou(pred_box.unsqueeze(0), torch.stack(filtered_targets)).max(0)
 
@@ -407,7 +407,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
             mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
-            mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)            
+            mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
             val_bar.set_description((' '*16 + 'mem:%8s' + '  val-semantic:%6.6g' + '  val-depth:%6.6g' + '  val-obj:%6.6g') % (
                                         mem, mean_smnt_loss, mean_depth_loss, mean_obj_loss))
 

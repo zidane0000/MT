@@ -15,15 +15,15 @@ try:
     from .general import id2trainId, put_palette, plot_xywh, xywh2xyxy
 except:
     from general import id2trainId, put_palette, plot_xywh, xywh2xyxy
-    
-    
+
+
 def get_sampler(dataset):
     if torch.distributed.is_initialized():
         from torch.utils.data.distributed import DistributedSampler
         return DistributedSampler(dataset)
     else:
         return None
-    
+
 
 class Cityscapes(Dataset):
     def __init__(
@@ -65,7 +65,7 @@ class Cityscapes(Dataset):
         verify_str_arg(split, "split", valid_modes, msg)
 
         if not isinstance(target_type, list):
-            self.target_type = [target_type]        
+            self.target_type = [target_type]
 
         if not os.path.isdir(self.images_dir) or not os.path.isdir(self.targets_dir):
 
@@ -108,11 +108,11 @@ class Cityscapes(Dataset):
         """
         # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
-        
+
         smnt = cv2.imread(self.targets[index][0], cv2.IMREAD_GRAYSCALE)
         if self.targets[index][0].endswith('_labelIds.png'):
             smnt = id2trainId(smnt, self.num_classes)
-        
+
         depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
 
         labels = np.zeros((0, 5), dtype=np.float32)
@@ -121,7 +121,7 @@ class Cityscapes(Dataset):
             with open(label_path) as f:
                 labels = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h
                 labels = np.array(labels, dtype=np.float32)
-        
+
         if self.random_crop:
             image, (smnt, depth), labels = do_random_crop(image, [smnt, depth], labels, self.width, self.height)
 
@@ -132,19 +132,19 @@ class Cityscapes(Dataset):
             image = self.transform(image)
             (smnt, depth) = self.transform((smnt, depth))
             labels = self.transform(labels)
-            
+
         num_labels = len(labels)  # number of labels
         labels_out = torch.zeros((num_labels, 6))
         if num_labels:
             labels_out[:, 1:] = torch.from_numpy(labels)
-                
+
         # (w, h, channel) -> (channel, w, h) and reszie if no random crop
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
         image = np.moveaxis(image, -1, 0)
 
         smnt = cv2.resize(smnt, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
         depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        
+
         return torch.from_numpy(image), torch.from_numpy(smnt), torch.from_numpy(depth), labels_out
 
     def __len__(self) -> int:
@@ -176,10 +176,10 @@ class Cityscapes(Dataset):
 
 def collate_fn(batch):
     images, smnts, depths, labels = zip(*batch)
-    
+
     for i, l in enumerate(labels):
         l[:, 0] = i  # add target image index for build_targets()
-        
+
     return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0), torch.cat(labels, 0)
 
 
@@ -206,7 +206,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                     sampler=sampler,
                     pin_memory=True,
                     collate_fn=collate_fn)
-    
+
     return dataset, dataloader
 
 
@@ -231,7 +231,7 @@ def do_random_crop(image, target, labels, input_width, input_height):
 
     for i in range(len(target)):
         target[i] = target[i][h_off:h_off+input_height, w_off:w_off+input_width]
-    
+
     need_delete = []
     for i in range(len(labels)):
         label = labels[i]
@@ -240,8 +240,8 @@ def do_random_crop(image, target, labels, input_width, input_height):
         top = xyxy_label[2] * img_h
         right = xyxy_label[3] * img_w
         down = xyxy_label[4] * img_h
-        
-        if left < w_off or top > h_off+input_height or right > w_off+input_width or down < h_off:            
+
+        if left < w_off or top > h_off+input_height or right > w_off+input_width or down < h_off:
             need_delete.append(i)
         else:
             # 等比例縮放
@@ -250,7 +250,7 @@ def do_random_crop(image, target, labels, input_width, input_height):
             label[3] = label[3] * img_w / input_width
             label[4] = label[4] * img_h / input_height
     labels = np.delete(labels, need_delete, axis=0)
-    
+
     return image, target, labels
 
 
@@ -277,21 +277,21 @@ if __name__ == '__main__':
         img, smnt, depth, labels = item
         print(labels.shape)
         print(labels[:5])
-        
+
 #         np_smnt = smnt[0].cpu().numpy()
 #         np_smnt = id2trainId(np_smnt, 255, reverse=True)
 #         np_smnt = put_palette(np_smnt, num_classes=255, path='smnt.jpg')
-        
+
 #         np_depth = depth[0].cpu().numpy()
 #         cv2.imwrite('depth.jpg', np_depth)
-            
+
 #         heat_depth = (np_depth * 255).astype('uint8')
 #         heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
 #         cv2.imwrite('heat.jpg', heat_depth)
 
 #         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
 #         cv2.imwrite('img.jpg', np_img)
-        
+
 #         np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])
 #         cv2.imwrite('np_img.jpg', np_img)
         input()

@@ -70,7 +70,7 @@ class Neck(nn.Module):
     def __init__(self, ch_in, ch_out):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
         assert len(ch_in) == len(ch_out), 'Neck need same num channel'
-        
+
         self.num_inputs = len(ch_in) # number of inputs
 
         layers = []
@@ -93,7 +93,7 @@ class Neck(nn.Module):
             Conv1_out = self.layers[i*4+1](Bottleneck_out)
             x[i] = self.layers[i*4+2](Conv1_out)
 
-            if i != (self.num_inputs-1):                
+            if i != (self.num_inputs-1):
                 if x[i].shape[2:] != x[i+1].shape[2:]:
                     x[i+1] = self.layers[i*4+3]((F.interpolate(x[i], size=x[i+1].shape[2:], mode='bilinear'), x[i+1]))
                 else:

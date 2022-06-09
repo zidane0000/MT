@@ -159,7 +159,7 @@ class CDilatedB(nn.Module):
         '''
         return self.bn(self.conv(input))
 
-    
+
 class DownSamplerB(nn.Module):
     def __init__(self, nIn, nOut):
         super().__init__()
@@ -193,7 +193,7 @@ class DownSamplerB(nn.Module):
         output = self.act(output)
         return output
 
-    
+
 class DilatedParllelResidualBlockB(nn.Module):
     '''
     This class defines the ESP block, which is based on the following principle
@@ -248,7 +248,7 @@ class DilatedParllelResidualBlockB(nn.Module):
         output = self.bn(combine)
         return output
 
-    
+
 class InputProjectionA(nn.Module):
     '''
     This class projects the input image to the same spatial dimensions as the feature map.
@@ -287,14 +287,14 @@ class ESPNet_Encoder(nn.Module):
         '''
         super().__init__()
         self.feat_out_channels = []
-        
+
         self.level1 = CBR(3, 16, 3, 2)
         self.sample1 = InputProjectionA(1)
         self.sample2 = InputProjectionA(2)
 
         self.b1 = BR(16 + 3)
         self.feat_out_channels.append(16 + 3)
-        
+
         self.level2_0 = DownSamplerB(16 +3, 64)
 
         self.level2 = nn.ModuleList()
@@ -323,7 +323,7 @@ class ESPNet_Encoder(nn.Module):
 
         output0_cat = self.b1(torch.cat([output0, inp1], 1))
         output1_0 = self.level2_0(output0_cat) # down-sampled
-        
+
         for i, layer in enumerate(self.level2):
             if i==0:
                 output1 = layer(output1_0)
@@ -344,7 +344,7 @@ class ESPNet_Encoder(nn.Module):
         encoder_classifier = self.classifier(output2_cat)
 
         return output0_cat, output1_cat, encoder_classifier
-        
+
 class ESPNet(nn.Module):
     '''
     This class defines the ESPNet network
@@ -360,7 +360,7 @@ class ESPNet(nn.Module):
         '''
         super().__init__()
         classes = params.num_classes
-        
+
         self.encoder = ESPNet_Encoder(classes, p, q)
         if encoderFile != None:
             self.encoder.load_state_dict(torch.load(encoderFile))
@@ -383,7 +383,7 @@ class ESPNet(nn.Module):
         '''
         :param input: RGB image
         :return: transformed feature map
-        '''        
+        '''
         output0_cat, output1_cat, encoder_classifier = self.encoder(input)
         output2_c = self.up_l3(self.br(encoder_classifier)) #RUM
 
@@ -394,7 +394,7 @@ class ESPNet(nn.Module):
 
         classifier = self.classifier(concat_features)
         return classifier
-    
+
 
 class ESPNet_Decoder(nn.Module):
     '''
@@ -410,7 +410,7 @@ class ESPNet_Decoder(nn.Module):
                             RUM-based light weight decoder. See paper for more details.
         '''
         super().__init__()
-        
+
         # light-weight decoder
         self.level3_C = C(input_channels[1], classes, 1, 1)
         self.br = nn.BatchNorm2d(input_channels[2], eps=1e-03)
@@ -433,33 +433,33 @@ class ESPNet_Decoder(nn.Module):
 
         output1_C = self.level3_C(output1_cat) # project to C-dimensional space
         comb_l2_l3 = self.up_l2(self.combine_l2_l3(torch.cat([output1_C, output2_c], 1))) #RUM
-        
+
         concat_features = self.conv(torch.cat([comb_l2_l3, output0_cat], 1))
 
         classifier = self.classifier(concat_features)
-        return classifier 
+        return classifier
 
-    
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()    
+    parser = argparse.ArgumentParser()
     # Semantic Segmentation
-    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)    
+    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
     params = parser.parse_args()
-    
+
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     model = ESPNet(params).to(device)
     encoder = ESPNet_Encoder(classes=19).to(device)
     decoder = ESPNet_Decoder(classes=19, input_channels=encoder.feat_out_channels).to(device)
     print("load model to device")
-    
+
     ran = torch.rand((4, 3, 64, 64)).to(device)
     output = model.forward(ran)
-    
+
     encoder_output = encoder(ran)
     result = decoder(encoder_output)
-    
+
     print("pass")
-    
+
     print("Try load pretrained")
     ckpt = torch.load('models/decoder/espnet_p_2_q_3.pth')
     model.load_state_dict(ckpt)

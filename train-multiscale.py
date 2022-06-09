@@ -30,7 +30,7 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
     model.train()
     pbar = enumerate(train_loader)
     if RANK in [-1, 0]: # Process 0
-        pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar        
+        pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
     # mean loss
     mean_loss = torch.zeros(2, device=device)
@@ -44,7 +44,7 @@ def train_oneDataloader(model, train_dataset, train_loader, optimizer, device, c
 
         output = model(img)
         loss, (smnt_loss, depth_loss) = compute_loss(output, (smnt, depth))
-        
+
         if RANK != -1:
                 loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
         loss.backward()
@@ -95,40 +95,40 @@ def train(params):
     else:
         lf = one_cycle(1, params.end_learning_rate, epochs)  # cosine 1->params.end_learning_rate
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    
+
     # DP mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         LOGGER.info('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
         model = torch.nn.DataParallel(model)
-        
+
     # SyncBatchNorm
     if params.sync_bn and cuda and RANK != -1:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         LOGGER.info('Using SyncBatchNorm()')
-        
+
     # DDP mode
     '''
-    多卡訓練的模型設置： 
-        最主要的是find_unused_parameters和broadcast_buffers參數； 
+    多卡訓練的模型設置：
+        最主要的是find_unused_parameters和broadcast_buffers參數；
         find_unused_parameters：如果模型的輸出有不需要進行反傳的(比如部分參數被凍結/或者網絡前傳是動態的)，設置此參數為True;如果你的代碼運行後卡住某個地方不動，基本上就是該參數的問題。
         broadcast_buffers：設置為True時，在模型執行forward之前，gpu0會把buffer中的參數值全部覆蓋到別的gpu上。注意這和同步BN並不一樣，同步BN應該使用SyncBatchNorm。
     '''
     if cuda and RANK != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
         LOGGER.info('Using DDP')
-        
+
     # Dataset, DataLoader
     input_height = params.input_height
     input_width = params.input_width
     train_dataset, train_loader = Create_Cityscapes(params, mode='train', rank=LOCAL_RANK)
-    
+
     params.input_height = int(input_height * 0.75)
     params.input_width = int(input_width * 0.75)
     train_dataset_scale1, train_loader_scale1 = Create_Cityscapes(params, mode='train', rank=LOCAL_RANK)
-        
+
     params.input_height = input_height
     params.input_width = input_width
-    
+
     # loss
     compute_loss = ComputeLoss()
     smnt_loss_history = []
@@ -143,24 +143,24 @@ def train(params):
     for epoch in range(epochs):
         if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
-            
+
         LOGGER.info(f'Epoch:{epoch}/{epochs - 1}')
         LOGGER.info('training with scale 1')
         train_oneDataloader(model, train_dataset_scale1, train_loader_scale1, optimizer, device, compute_loss, params.max_cpu)
-        
+
         LOGGER.info('training with scale full')
         mean_loss = train_oneDataloader(model, train_dataset, train_loader, optimizer, device, compute_loss, params.max_cpu)
         scheduler.step()
-        
+
         if RANK in [-1, 0]: # Process 0
             # Test
             (smnt_val_loss, depth_val_loss), (smnt_mean_iou_val, smnt_iou_array_val), depth_val = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
-            
+
             smnt_loss_history.append(mean_loss[0].cpu().numpy())
             depth_loss_history.append(mean_loss[1].cpu().numpy())
             smnt_val_loss_history.append(smnt_val_loss.cpu().numpy())
             depth_val_loss_history.append(depth_val_loss.cpu().numpy())
-            
+
             mean_iou_history.append(smnt_mean_iou_val)
             d1_history.append(depth_val[-3])
             d2_history.append(depth_val[-2])
@@ -173,7 +173,7 @@ def train(params):
                         'date': datetime.now().isoformat()}
                 torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
                 del ckpt
-    
+
     if RANK in [-1, 0]: # Process 0
         plt.plot(range(epochs), smnt_loss_history)
         plt.plot(range(epochs), depth_loss_history)
@@ -182,11 +182,11 @@ def train(params):
         plt.legend(['semantic','depth','semantic(val)','depth(val)'])
         plt.savefig(save_dir / 'loss_history.png')
         plt.clf()
-        
+
         plt.plot(range(epochs), mean_iou_history)
         plt.savefig(save_dir / 'mean_iou_history.png')
         plt.clf()
-        
+
         plt.plot(range(epochs), d1_history)
         plt.plot(range(epochs), d2_history)
         plt.plot(range(epochs), d3_history)
@@ -229,15 +229,15 @@ if __name__ == '__main__':
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
-    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
-    
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts')
+
     # Object detection
-    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')    
-    params = parser.parse_args()    
-    
+    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
+    params = parser.parse_args()
+
     # Directories
     params.save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok) # if create here will cause 2 folder
     params.save_dir.mkdir(parents=True, exist_ok=True)
     LOGGER.info("saving to " + str(params.save_dir))
-    
+
     train(params)

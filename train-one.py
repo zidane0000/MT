@@ -18,10 +18,10 @@ from val import val_one as val
 from utils.general import one_cycle, increment_path, select_device, LOGGER, intersect_dicts, safety_cpu, create_dataloader
 
 model_type = 'hrnet'.lower()
-if model_type in ['ccnet','espnet', 'hrnet']: 
+if model_type in ['ccnet','espnet', 'hrnet']:
     task = 'smnt'
     from utils.loss import CriterionOhemDSN as ComputeLoss # CriterionDSN
-    
+
     if model_type == 'espnet':
         from models.decoder.espnet import ESPNet as OneModel
     elif model_type == 'hrnet':
@@ -29,7 +29,7 @@ if model_type in ['ccnet','espnet', 'hrnet']:
 elif model_type.lower() in ['bts','yolor']:
     task = 'depth'
     from utils.loss import silog_loss as ComputeLoss
-    
+
     if model_type == 'bts':
         from models.decoder.bts import BtsModel as OneModel
     elif model_type == 'yolor':
@@ -56,7 +56,7 @@ def train(params):
 
     # Model
     LOGGER.info("begin to bulid up model...")
-    
+
     pretrained = (params.pretrain is not None) and (params.pretrain.endswith('.pt'))
     cfg = hrnet_cfg if model_type == 'hrnet' else params
     if pretrained:
@@ -82,28 +82,28 @@ def train(params):
     else:
         lf = one_cycle(1, params.end_learning_rate, epochs)  # cosine 1->params.end_learning_rate
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    
+
     # DP mode
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         LOGGER.info('WARNING: DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.')
         model = torch.nn.DataParallel(model).cuda()
-        
+
     # SyncBatchNorm
     if params.sync_bn and cuda and RANK != -1:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         LOGGER.info('Using SyncBatchNorm()')
-        
+
     # DDP mode
     '''
-    多卡訓練的模型設置： 
-        最主要的是find_unused_parameters和broadcast_buffers參數； 
+    多卡訓練的模型設置：
+        最主要的是find_unused_parameters和broadcast_buffers參數；
         find_unused_parameters：如果模型的輸出有不需要進行反傳的(比如部分參數被凍結/或者網絡前傳是動態的)，設置此參數為True;如果你的代碼運行後卡住某個地方不動，基本上就是該參數的問題。
         broadcast_buffers：設置為True時，在模型執行forward之前，gpu0會把buffer中的參數值全部覆蓋到別的gpu上。注意這和同步BN並不一樣，同步BN應該使用SyncBatchNorm。
     '''
     if cuda and RANK != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
         LOGGER.info('Using DDP')
-        
+
     # Dataset, DataLoader
     train_dataset, train_loader = create_dataloader(params, mode='train', rank=LOCAL_RANK)
 
@@ -119,17 +119,17 @@ def train(params):
     for epoch in range(epochs):
         if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
-            
+
         # current learning rate
         lr = [x['lr'] for x in optimizer.param_groups]
         LOGGER.info(f'Learning rate : {lr}')
-            
+
         # Train
         model.train()
         pbar = enumerate(train_loader)
         if RANK in [-1, 0]: # Process 0
             pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
-        
+
         # mean loss
         mean_loss = torch.zeros(1, device=device)
         for i, item in pbar:
@@ -139,12 +139,12 @@ def train(params):
             depth = depth.to(device)
 
             optimizer.zero_grad()
-            
+
             output = model(img)
             output = output[-1] if model_type == 'yolor' else output
             gt = smnt if task == 'smnt' else depth
             loss = compute_loss(output, gt)
-            
+
             if RANK != -1:
                 loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
             loss.backward()
@@ -157,14 +157,14 @@ def train(params):
                 mean_loss = (mean_loss * i + loss.detach().item()) / (i + 1)
                 pbar.set_description(('epoch:%8s' + '  mem:%8s' + '  loss:%6.6g') % (f'{epoch}/{epochs - 1}', mem, mean_loss))
         scheduler.step()
-        
+
         if RANK in [-1, 0]: # Process 0
             # Test
             val_loss, (smnt_mean_iou_val, smnt_iou_array_val), depth_val = val(params, save_dir=save_dir, model_type=model_type, model=model, device=device, compute_loss=compute_loss, task = task)
-            
+
             loss_history.append(mean_loss)
-            val_loss_history.append(val_loss)           
-            
+            val_loss_history.append(val_loss)
+
             if task == 'smnt':
                 mean_iou_history.append(smnt_mean_iou_val)
             elif task == 'depth':
@@ -179,19 +179,19 @@ def train(params):
                         'date': datetime.now().isoformat()}
                 torch.save(ckpt, save_dir / 'epoch-{}.pt'.format(epoch))
                 del ckpt
-    
+
     if RANK in [-1, 0]: # Process 0
         plt.plot(range(epochs), loss_history)
         plt.plot(range(epochs), val_loss_history)
         plt.legend(['train','val'])
         plt.savefig(save_dir / 'history.png')
         plt.clf()
-        
+
         if task == 'smnt':
             plt.plot(range(epochs), mean_iou_history)
             plt.savefig(save_dir / 'mean_iou_history.png')
-            plt.clf()            
-        elif task == 'depth':            
+            plt.clf()
+        elif task == 'depth':
             plt.plot(range(epochs), d1_history)
             plt.plot(range(epochs), d2_history)
             plt.plot(range(epochs), d3_history)
@@ -235,15 +235,15 @@ if __name__ == '__main__':
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
-    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
-    
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts')
+
     # Object detection
-    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')    
-    params = parser.parse_args()    
-    
+    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
+    params = parser.parse_args()
+
     # Directories
     params.save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok) # if create here will cause 2 folder
     params.save_dir.mkdir(parents=True, exist_ok=True)
     LOGGER.info("saving to " + str(params.save_dir))
-    
+
     train(params)

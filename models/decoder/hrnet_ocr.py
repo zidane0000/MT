@@ -9,13 +9,13 @@ from torch.nn import Softmax
 from easydict import EasyDict
 
 # https://blog.csdn.net/jqc8438/article/details/109984113
-from inplace_abn import InPlaceABN, InPlaceABNSync    
+from inplace_abn import InPlaceABN, InPlaceABNSync
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 BatchNorm2d_class = InPlaceABNSync
 relu_inplace = False
-    
+
 # if torch.__version__.startswith('0'):
-#    from inplace_abn import InPlaceABN, InPlaceABNSync    
+#    from inplace_abn import InPlaceABN, InPlaceABNSync
 #    BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
 #    BatchNorm2d_class = InPlaceABNSync
 #    relu_inplace = False
@@ -30,7 +30,7 @@ BN_MOMENTUM = 0.1
 cfg = EasyDict({
     'local_rank': -1,
     'DATASET':{
-        'NUM_CLASSES': 19            
+        'NUM_CLASSES': 19
     },
     'MODEL':{
         'NAME': 'seg_hrnet_ocr',
@@ -74,7 +74,7 @@ cfg = EasyDict({
             'DROPOUT':0.05,
             'SCALE':1
             },
-        }        
+        }
 })
 
 class ModuleHelper:
@@ -99,7 +99,7 @@ def conv3x3(in_planes, out_planes, stride=1):
 
 class SpatialGather_Module(nn.Module):
     """
-        Aggregate the context features according to the initial 
+        Aggregate the context features according to the initial
         predicted probability distribution.
         Employ the soft-weighted method to aggregate the context.
     """
@@ -112,7 +112,7 @@ class SpatialGather_Module(nn.Module):
         batch_size, c, h, w = probs.size(0), probs.size(1), probs.size(2), probs.size(3)
         probs = probs.view(batch_size, c, -1)
         feats = feats.view(batch_size, feats.size(1), -1)
-        feats = feats.permute(0, 2, 1) # batch x hw x c 
+        feats = feats.permute(0, 2, 1) # batch x hw x c
         probs = F.softmax(self.scale * probs, dim=2)# batch x k x hw
         ocr_context = torch.matmul(probs, feats)\
         .permute(0, 2, 1).unsqueeze(3)# batch x k x c
@@ -132,10 +132,10 @@ class _ObjectAttentionBlock(nn.Module):
     Return:
         N X C X H X W
     '''
-    def __init__(self, 
-                 in_channels, 
-                 key_channels, 
-                 scale=1, 
+    def __init__(self,
+                 in_channels,
+                 key_channels,
+                 scale=1,
                  bn_type=None):
         super(_ObjectAttentionBlock, self).__init__()
         self.scale = scale
@@ -182,7 +182,7 @@ class _ObjectAttentionBlock(nn.Module):
 
         sim_map = torch.matmul(query, key)
         sim_map = (self.key_channels**-.5) * sim_map
-        sim_map = F.softmax(sim_map, dim=-1)   
+        sim_map = F.softmax(sim_map, dim=-1)
 
         # add bg context ...
         context = torch.matmul(sim_map, value)
@@ -196,14 +196,14 @@ class _ObjectAttentionBlock(nn.Module):
 
 
 class ObjectAttentionBlock2D(_ObjectAttentionBlock):
-    def __init__(self, 
-                 in_channels, 
-                 key_channels, 
-                 scale=1, 
+    def __init__(self,
+                 in_channels,
+                 key_channels,
+                 scale=1,
                  bn_type=None):
         super(ObjectAttentionBlock2D, self).__init__(in_channels,
                                                      key_channels,
-                                                     scale, 
+                                                     scale,
                                                      bn_type=bn_type)
 
 
@@ -212,17 +212,17 @@ class SpatialOCR_Module(nn.Module):
     Implementation of the OCR module:
     We aggregate the global object representation to update the representation for each pixel.
     """
-    def __init__(self, 
-                 in_channels, 
-                 key_channels, 
-                 out_channels, 
-                 scale=1, 
-                 dropout=0.1, 
+    def __init__(self,
+                 in_channels,
+                 key_channels,
+                 out_channels,
+                 scale=1,
+                 dropout=0.1,
                  bn_type=None):
         super(SpatialOCR_Module, self).__init__()
-        self.object_context_block = ObjectAttentionBlock2D(in_channels, 
-                                                           key_channels, 
-                                                           scale, 
+        self.object_context_block = ObjectAttentionBlock2D(in_channels,
+                                                           key_channels,
+                                                           scale,
                                                            bn_type)
         _in_channels = 2 * in_channels
 
@@ -550,9 +550,9 @@ class HighResolutionNet(nn.Module):
             nn.Conv2d(last_inp_channels, config.DATASET.NUM_CLASSES,
                       kernel_size=1, stride=1, padding=0, bias=True)
         )
-        
+
         self.init_weights(cfg.MODEL.PRETRAINED)
-        
+
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
         num_branches_cur = len(num_channels_cur_layer)
@@ -783,9 +783,9 @@ class HighResolutionEncoder(nn.Module):
             pre_stage_channels, num_channels)
         self.stage4, pre_stage_channels = self._make_stage(
             self.stage4_cfg, num_channels, multi_scale_output=True)
-        
+
         self.init_weights(cfg.MODEL.PRETRAINED)
-        
+
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
         num_branches_cur = len(num_channels_cur_layer)
@@ -976,9 +976,9 @@ class HighResolutionDecoder(nn.Module):
             nn.Conv2d(last_inp_channels, config.DATASET.NUM_CLASSES,
                       kernel_size=1, stride=1, padding=0, bias=True)
         )
-        
+
         self.init_weights(cfg.MODEL.PRETRAINED)
-   
+
     def forward(self, x):  # # x resolution maybe = [1/2, 1/4, 1/8, 1/16, 1/32]
         # Upsampling
         x0_h, x0_w = x[-4].size(2), x[-4].size(3)
@@ -1002,7 +1002,7 @@ class HighResolutionDecoder(nn.Module):
         feats = self.ocr_distri_head(feats, context)
 
         out = self.cls_head(feats) # [Batch_size, 19, H/4, W/4]
-        
+
         # out_aux_seg.append(out_aux)
         # out_aux_seg.append(out)
 
@@ -1022,10 +1022,10 @@ class HighResolutionDecoder(nn.Module):
         if os.path.isfile(pretrained):
             pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
             model_dict = self.state_dict()
-            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}    
+            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}
             inherit_num = len(set(model_dict) & set(pretrained_dict))
-            
-            if inherit_num > 0:            
+
+            if inherit_num > 0:
                 print('=> loading pretrained model {} for semantic head'.format(pretrained))
                 print(f'inhert : {inherit_num} / {len(set(pretrained_dict))}')
                 pretrained_dict = {k: v for k, v in pretrained_dict.items()
@@ -1048,7 +1048,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = get_seg_model(cfg).to(device)
     print("load model to device")
-    
+
     distributed = cfg.local_rank >= 0
     # if distributed:
     if True:
@@ -1056,20 +1056,20 @@ if __name__ == '__main__':
         torch.distributed.init_process_group(
             backend="nccl", init_method="env://",
         )
-    
-    ran = torch.rand((4, 3, 512, 512)).to(device)    
+
+    ran = torch.rand((4, 3, 512, 512)).to(device)
     model.forward(ran)
     print('pass')
 
-    
+
     print('Init by split')
     encoder = HighResolutionEncoder(cfg).to(device)
     print("load encoder to device")
-    
+
     pre_stage_channels = cfg.MODEL.EXTRA.STAGE4.NUM_CHANNELS # Last stage number channels
     decoder = HighResolutionDecoder(cfg, pre_stage_channels).to(device)
     print("load decoder to device")
-    
+
     x = encoder(ran)
     x = decoder(x)
     print('pass by split')

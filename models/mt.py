@@ -30,7 +30,7 @@ class MTmodel(nn.Module):
         params : dict
         '''
         super(MTmodel, self).__init__()
-        
+
         if params.encoder.lower() == 'yolor':
             self.encoder = YOLOR_backbone(params)
         else:
@@ -57,17 +57,17 @@ class MTmodel(nn.Module):
             else:
                 self.depth_neck = Neck(self.encoder.feat_out_channels, self.encoder.feat_out_channels)
                 self.depth_decoder = bts(params, self.encoder.feat_out_channels, bts_size)
-            
+
         # Object detection
         self.obj_head = params.obj_head.lower()
         if self.obj_head == "yolo":
             self.object_detection_neck = Neck(self.encoder.feat_out_channels[:4], self.encoder.feat_out_channels[:4])
             self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels[:4])
-            m = self.object_detection_decoder            
+            m = self.object_detection_decoder
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, 3, s, s))[-1]])  # forward
             m.anchors /= m.stride.view(-1, 1, 1)
-            
+
             # Check anchor order against stride order for Detect() module m, and correct if necessary
             a = m.anchors.prod(-1).view(-1)  # anchor area
             da = a[-1] - a[0]  # delta a
@@ -75,7 +75,7 @@ class MTmodel(nn.Module):
             if da.sign() != ds.sign():  # same order
                 print('obj_head Reversing anchor order')
                 m.anchors[:] = m.anchors.flip(0)
-            
+
             # initialize_biases -> https://arxiv.org/abs/1708.02002 section 3.3
             for mi, s in zip(m.m, m.stride):  # from
                 b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
@@ -85,7 +85,7 @@ class MTmodel(nn.Module):
 
     def forward(self, x):
         feature_maps = self.encoder(x) # five feature maps
-        
+
         res = []
         if self.semantic_head:
             if self.semantic_head == "ccnet":
@@ -102,14 +102,14 @@ class MTmodel(nn.Module):
             neck_res = self.depth_neck(feature_maps)
             depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth = self.depth_decoder(neck_res)
             res.append(final_depth)
-        
+
         if self.obj_head:
             neck_res = self.object_detection_neck(feature_maps[:4])
             objs = self.object_detection_decoder(neck_res) # input -> H/2, H/4, H/8, H/16
             res.append(objs)
-        
+
         return res
-    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -123,25 +123,25 @@ if __name__ == '__main__':
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
-    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts') 
-    
+    parser.add_argument('--depth_head',    type=str, help='Choose method for depth estimation head', default='bts')
+
     # Object detection
-    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')    
+    parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
     params = parser.parse_args()
 
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     model = MTmodel(params).to(device)
     print("load model to device")
-    
+
     if params.summary:
         summary(model, (3, 32, 32))
-        
+
     if params.semantic_head == 'HRNet':
         torch.cuda.set_device(device)
         torch.distributed.init_process_group(backend="nccl", init_method="env://",)
         print('for HRNet')
-    
-    ran = torch.rand((4, 3, 384, 768)).to(device)    
-    output = model.forward(ran)    
+
+    ran = torch.rand((4, 3, 384, 768)).to(device)
+    output = model.forward(ran)
     print("pass")
     

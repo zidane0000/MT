@@ -23,7 +23,7 @@ def get_sampler(dataset):
 class Kitti(Dataset):
     def __init__(
         self,
-        file: str,        
+        file: str,
         input_height: int,
         input_width: int,
         random_flip: bool = False,
@@ -34,10 +34,10 @@ class Kitti(Dataset):
         self.file = file
         self.transform = transform
         self.height, self.width = input_height, input_width
-        
+
         self.random_flip = random_flip
         self.random_crop = random_crop
-        
+
         try:
             self.file = Path(self.file)
             with open(self.file) as f:
@@ -55,19 +55,19 @@ class Kitti(Dataset):
         """
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
         assert image is not None, f'No images found in {self.images[index]}'
-                
+
         '''
         images : '../kitti/data_depth_annotated/2011_09_26/2011_09_26_drive_0001_sync/image_02/data/0000000005.png'
         targets: '../kitti/data_depth_annotated/2011_09_26_drive_0001_sync/proj_depth/groundtruth/image_02/0000000005.png'
         '''
         depth_path = self.images[index].replace(self.images[index].split('/')[-5]+'/','')
         depth_path = depth_path.replace('/image_02/data','/proj_depth/groundtruth/image_02')
-        depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)        
+        depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
         assert depth is not None, f'No images found in {self.targets[index]}'
-        
+
         labels = np.zeros((0, 5), dtype=np.float32)
         print('Undone Labels')
-        
+
         if self.random_crop:
             image, depth = do_random_crop(image, depth, self.width, self.height)
 
@@ -77,18 +77,18 @@ class Kitti(Dataset):
         if self.transform is not None:
             image = self.transform(image)
             depth = self.transform(depth)
-        
+
         num_labels = len(labels)  # number of labels
         labels_out = torch.zeros((num_labels, 6))
         if num_labels:
             labels_out[:, 1:] = torch.from_numpy(labels)
-           
+
         # (w, h, channel) -> (channel, w, h) and reszie if no random crop
         image = cv2.resize(image, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
         image = np.moveaxis(image, -1, 0)
 
         depth = cv2.resize(depth, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
-        
+
         return torch.from_numpy(image), torch.zeros(1), torch.from_numpy(depth), labels_out
 
     def __len__(self) -> int:
@@ -100,7 +100,7 @@ def Create_Kitti(params, mode='train', rank=-1):
     batch_size = params.batch_size
     workers = params.workers
     input_height, input_width = params.input_height, params.input_width
-    
+
     file = params.root + '/kitti_train.txt' if mode == 'train' else params.root + '/kitti_test.txt'
     dataset = Kitti(file,
                     input_height=input_height,
@@ -115,7 +115,7 @@ def Create_Kitti(params, mode='train', rank=-1):
                     shuffle=True and sampler is None,
                     sampler=sampler,
                     pin_memory=True)
-    
+
     return dataset, dataloader
 
 
@@ -129,7 +129,7 @@ def do_random_flip(image, target):
 
 def do_random_crop(image, target, input_width, input_height):
     img_h, img_w, channel = image.shape
-    
+
     h_gap, w_gap = img_h - input_height, img_w - input_width
     if h_gap < 0 or w_gap < 0:
         top = abs(int(h_gap / 2)) if h_gap < 0 else 0
@@ -138,12 +138,12 @@ def do_random_crop(image, target, input_width, input_height):
         right = abs(w_gap + left) if w_gap < 0 else 0
         image = cv2.copyMakeBorder(image, top, down, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
         target = cv2.copyMakeBorder(target, top, down, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
-        
+
         img_h, img_w, channel = image.shape
-    
+
     h_off = random.randint(0, img_h - input_height)
     w_off = random.randint(0, img_w - input_width)
-        
+
     image = image[h_off:h_off+input_height, w_off:w_off+input_width, :]
     target = target[h_off:h_off+input_height, w_off:w_off+input_width]
     return image, target

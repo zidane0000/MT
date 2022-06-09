@@ -41,7 +41,7 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out = out + residual      
+        out = out + residual
         out = self.relu_inplace(out)
 
         return out
@@ -88,22 +88,22 @@ class CCNet_resnet50(nn.Module):
 
     def forward(self, x):
         outs = []
-        
+
         x = self.relu1(self.bn1(self.conv1(x)))
         outs.append(x)
-        
+
         x = self.relu2(self.bn2(self.conv2(x)))
         outs.append(x)
-        
+
         x = self.relu3(self.bn3(self.conv3(x)))
         outs.append(x)
-        
+
         x = self.maxpool(x)
         outs.append(x)
-        
+
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.layer3(x)        
+        x = self.layer3(x)
         x = self.layer4(x)
         outs.append(x)
 
@@ -153,7 +153,7 @@ class encoder(nn.Module):
     def forward(self, x):
         if self.params.encoder == 'CCNet_resnet50':
             return self.base_model(x)
-            
+
         feature = x
         skip_feat = []
         i = 1

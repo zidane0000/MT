@@ -42,7 +42,7 @@ class silog_loss(nn.Module):
         constant = 10.0
         return torch.sqrt((d ** 2).mean() - self.variance_focus * (d.mean() ** 2)) * constant
 
-    
+
 class CriterionDSN(nn.Module):
     '''
     DSN : We need to consider two supervision for the model.
@@ -61,13 +61,13 @@ class CriterionDSN(nn.Module):
 
         if ph != h or pw != w:
             preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
-                    
+
         if target.dtype != torch.long:
             target = target.to(torch.long)
         loss = self.criterion(preds, target)
         return loss
 
-    
+
 class OhemCrossEntropy2d(nn.Module):
     def __init__(self, ignore_label=255, thresh=0.7, min_kept=100000, factor=8):
         super(OhemCrossEntropy2d, self).__init__()
@@ -109,11 +109,11 @@ class OhemCrossEntropy2d(nn.Module):
                     threshold = new_threshold
         return threshold
 
-    """ 
-        主要思路 
-            1.先通過find_threshold找到一個合適的閾值如0.7 
-            2.一次篩選出不為255的區域 
-            3.再從中二次篩選找出對應預測值小於0.7的區域 
+    """
+        主要思路
+            1.先通過find_threshold找到一個合適的閾值如0.7
+            2.一次篩選出不為255的區域
+            3.再從中二次篩選找出對應預測值小於0.7的區域
             4.重新生成一個label，label把預測值大於0.7和原本為255的位置 都置為255
     """
     def generate_new_target(self, predict, target):
@@ -145,7 +145,7 @@ class OhemCrossEntropy2d(nn.Module):
 
         return new_target
 
-    def forward(self, predict, target, weight=None):        
+    def forward(self, predict, target, weight=None):
         """
             Args:
                 predict:(n, c, h, w)
@@ -157,7 +157,7 @@ class OhemCrossEntropy2d(nn.Module):
 
         input_prob = F.softmax(predict, 1)
         target = self.generate_new_target(input_prob, target)
-        
+
         return self.criterion(predict, target)
 
 
@@ -177,9 +177,9 @@ class CriterionOhemDSN(nn.Module):
 
         if ph != h or pw != w:
             preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
-                        
+
         loss1 = self.criterion1(preds, target)
-        
+
         if target.dtype != torch.long:
             target = target.to(torch.long)
         loss2 = self.criterion2(preds, target)
@@ -366,31 +366,31 @@ class YOLO_loss:
             tcls.append(c)  # class
 
         return tcls, tbox, indices, anch
-    
+
     def smooth_BCE(self, eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
         # return positive, negative label smoothing BCE targets
         return 1.0 - 0.5 * eps, 0.5 * eps
-        
+
 
 class ComputeLoss:
     def __init__(self, model):
         super(ComputeLoss, self).__init__()
         self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
         self.depth_loss_function = silog_loss()
-        
+
         if model.object_detection_decoder:
             self.obj_loss_function = YOLO_loss(model.object_detection_decoder)
-    
+
     def __call__(self, predicts, targets):
         (predict_smnt, predict_depth, predict_obj) = predicts
         (target_smnt, target_depth, target_obj) = targets
 
         depth_loss = self.depth_loss_function(predict_depth, target_depth)
         depth_loss = torch.unsqueeze(depth_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
-        
+
         smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
         smnt_loss = torch.unsqueeze(smnt_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
-        
-        obj_loss = self.obj_loss_function(predict_obj, target_obj)    
+
+        obj_loss = self.obj_loss_function(predict_obj, target_obj)
 
         return (smnt_loss + depth_loss + obj_loss), (smnt_loss, depth_loss, obj_loss)

@@ -28,7 +28,7 @@ def id2trainId(label, classes, reverse=False):
     else:
         for k, v in id_to_trainid.items():
             label_copy[label == k] = v
-    
+
     unique_values = np.unique(label_copy)
     unique_values = unique_values[unique_values != ignore_label] # ignore specific label
     max_val = max(unique_values)
@@ -43,7 +43,7 @@ def id2trainId(label, classes, reverse=False):
             LOGGER.info("min_val {} <".format(min_val))
         LOGGER.info('Exiting!!')
         exit()
-        
+
     return label_copy
 
 
@@ -141,7 +141,7 @@ def select_device(device='', batch_size=None, newline=True):
         devices = device.split(',') if device else '0'  # range(torch.cuda.device_count())  # i.e. 0,1,6,7
         n = len(devices)  # device count
         if n > 1 and batch_size:  # check batch_size is divisible by device_count
-            assert batch_size % n == 0, f'batch-size {batch_size} not multiple of GPU count {n}'        
+            assert batch_size % n == 0, f'batch-size {batch_size} not multiple of GPU count {n}'
         for i, d in enumerate(devices):
             p = torch.cuda.get_device_properties(i)
             LOGGER.info(f"Find CUDA:{d} ({p.name}, {p.total_memory / 1024 ** 2:.0f}MiB)")  # bytes to MB
@@ -153,7 +153,7 @@ def select_device(device='', batch_size=None, newline=True):
 
 def reduce_tensor(inp):
     """
-    Reduce the loss from all processes so that 
+    Reduce the loss from all processes so that
     process with rank 0 has the averaged results.
     """
     world_size = 1 if not torch.distributed.is_initialized() else torch.distributed.get_world_size()

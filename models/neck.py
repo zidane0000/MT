@@ -95,7 +95,7 @@ class Neck(nn.Module):
 
             if i != (self.num_inputs-1):
                 if x[i].shape[2:] != x[i+1].shape[2:]:
-                    x[i+1] = self.layers[i*4+3]((F.interpolate(x[i], size=x[i+1].shape[2:], mode='bilinear'), x[i+1]))
+                    x[i+1] = self.layers[i*4+3]((F.interpolate(x[i], size=x[i+1].shape[2:], mode='bilinear', align_corners=True), x[i+1]))
                 else:
                     x[i+1] = self.layers[i*4+3]((x[i], x[i+1]))
         return x

@@ -154,7 +154,6 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         if (time.time() - t) > time_limit:
             print(f'WARNING: NMS time limit {time_limit}s exceeded')
             break  # time limit exceeded
-
     return output
 
 
@@ -391,7 +390,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     for i, item in val_bar:
         img, smnt, depth, labels = item
         all_labels += labels[:, 1].tolist()
-        img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+        img = img.to(device, non_blocking=True)
         smnt = smnt.to(device)
         depth = depth.to(device)
         labels = labels.to(device)
@@ -399,83 +398,128 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         with torch.no_grad():
             output = model(img)
 
-        (predict_smnt, predict_depth, (predict_obj, predict_train_obj)) = output
+        task = 0
+        if params.semantic_head != '':
+            predict_smnt = output[task]
+            task+=1
+
+            # upsample to origin size
+            interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
+            predict_smnt = interp(predict_smnt)
+
+            np_predict_smnt = predict_smnt.cpu().numpy()
+            np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
+            np_gt_smnt= smnt.cpu().numpy()
+            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
+            smnt_mean_iou_val += miou
+            smnt_iou_array_val += iou_array
+
+            if params.plot:
+                np_gt_smnt = np_gt_smnt[0]
+                np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
+                np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
+
+                np_predict_smnt = np_predict_smnt[0]
+                np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
+                np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
+
+        if params.depth_head != '':
+            predict_depth = output[task]
+            task+=1
+            np_predict_depth = predict_depth.cpu().numpy().squeeze().astype(np.float32)
+            np_gt_depth = depth.cpu().numpy().astype(np.float32)
+            depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
+
+            if params.plot:
+                np_predict_depth = np_predict_depth[0]
+                cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
+
+                heat_predict_depth = (np_predict_depth * 255).astype('uint8')
+                heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
+                cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
+
+                np_gt_depth = np_gt_depth[0]
+                cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
+
+                heat_gt_depth = (np_gt_depth * 255).astype('uint8')
+                heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
+                cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
+
+        if params.obj_head != '':
+            (predict_obj, predict_train_obj) = output[task]
+            task+=1
+            sample_metrics += compute_yolo_eval(predict_obj, labels)
 
         if compute_loss:
             safety_cpu(params.max_cpu)
-            loss, (smnt_loss, depth_loss, obj_loss) = compute_loss((predict_smnt, predict_depth, predict_train_obj), (smnt, depth, labels))
+            loss, spilt_loss = compute_loss(output, (smnt, depth, labels))
             mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
-            mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
-            mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
-            val_bar.set_description((' '*16 + 'mem:%8s' + '  val-semantic:%6.6g' + '  val-depth:%6.6g' + '  val-obj:%6.6g') % (
-                                        mem, mean_smnt_loss, mean_depth_loss, mean_obj_loss))
 
-        # upsample to origin size
-        interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
-        predict_smnt = interp(predict_smnt)
+            log = (' '*16 + 'mem:%8s') % (mem)
+            task = 0
+            if params.semantic_head != '':
+                smnt_loss = spilt_loss[task]
+                task+=1
+                mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
+                log += ('      semantic:%6.6g') % (mean_smnt_loss)
 
-        np_predict_smnt = predict_smnt.cpu().numpy()
-        np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
-        np_gt_smnt= smnt.cpu().numpy()
-        miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
-        smnt_mean_iou_val += miou
-        smnt_iou_array_val += iou_array
+            if params.depth_head != '':
+                depth_loss = spilt_loss[task]
+                task+=1
+                mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
+                log += ('      depth:%6.6g') % (mean_depth_loss)
 
-        np_predict_depth = predict_depth.cpu().numpy().squeeze().astype(np.float32)
-        np_gt_depth = depth.cpu().numpy().astype(np.float32)
-        depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
+            if params.obj_head != '':
+                obj_loss = spilt_loss[task]
+                task+=1
+                mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
+                log += ('      obj:%6.6g') % (mean_obj_loss)
 
-        sample_metrics += compute_yolo_eval(predict_obj, labels)
+            val_bar.set_description(log)
 
         if params.plot:
-            np_gt_smnt = np_gt_smnt[0]
-            np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
-            np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
-
-            np_predict_smnt = np_predict_smnt[0]
-            np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
-            np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
-
-            np_predict_depth = np_predict_depth[0]
-            cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
-
-            heat_predict_depth = (np_predict_depth * 255).astype('uint8')
-            heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
-            cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
-
-            np_gt_depth = np_gt_depth[0]
-            cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
-
-            heat_gt_depth = (np_gt_depth * 255).astype('uint8')
-            heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
-            cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
-
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
             cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
 
-    smnt_mean_iou_val /= len(val_bar)
-    smnt_iou_array_val /= len(val_bar)
-    depth_val /= len(val_bar)
+    all_val_loss = []
+    all_val = []
+    if params.semantic_head != '':
+        smnt_mean_iou_val /= len(val_bar)
+        smnt_iou_array_val /= len(val_bar)
+        LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
+        all_val.append((smnt_mean_iou_val, smnt_iou_array_val))
 
-    mean_percision, mean_recall, mean_ap = Concatenate_sample_statistics(sample_metrics, all_labels)
-    obj_val = mean_ap
+        if compute_loss:
+            all_val_loss.append(mean_smnt_loss)
 
-    LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
-    depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
-    for i in range(len(depth_val_str)):
-        LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
+    if params.depth_head != '':
+        depth_val /= len(val_bar)
+        depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
+        for i in range(len(depth_val_str)):
+            LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
+        all_val.append(depth_val)
 
-    LOGGER.info('mean_percision : %5.3f' % (mean_percision))
-    LOGGER.info('mean_recall    : %5.3f' % (mean_recall))
-    LOGGER.info('mean_ap        : %5.3f' % (mean_ap))
+        if compute_loss:
+            all_val_loss.append(mean_depth_loss)
+
+    if params.obj_head != '':
+        mean_percision, mean_recall, mean_ap = Concatenate_sample_statistics(sample_metrics, all_labels)
+        obj_val = mean_ap
+        LOGGER.info('mean_percision : %5.3f' % (mean_percision))
+        LOGGER.info('mean_recall    : %5.3f' % (mean_recall))
+        LOGGER.info('mean_ap        : %5.3f' % (mean_ap))
+        all_val.append(obj_val)
+
+        if compute_loss:
+            all_val_loss.append(mean_obj_loss)
 
     LOGGER.info('-'*45)
 
+
     if compute_loss:
-        return (mean_smnt_loss, mean_depth_loss, mean_obj_loss), (smnt_mean_iou_val, smnt_iou_array_val), depth_val, obj_val
+        return all_val_loss, all_val
     else:
-        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val, obj_val
+        return all_val
 
 
 def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):

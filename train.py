@@ -43,14 +43,10 @@ def train(params):
 
     # Optimizer
     if params.adam:
-        optimizer = Adam([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
-                          {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
-                          {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
+        optimizer = Adam([{'params': model.parameters()}],
                          lr=params.learning_rate, betas=(params.momentum, 0.999))
     else:
-        optimizer = SGD([{'params': model.encoder.parameters(), 'weight_decay': params.weight_decay},
-                          {'params': model.semantic_decoder.parameters(), 'weight_decay': 0},
-                          {'params': model.depth_decoder.parameters(), 'weight_decay': 0}],
+        optimizer = SGD([{'params': model.parameters(), 'weight_decay': params.weight_decay}],
                          lr=params.learning_rate, momentum=params.momentum)
     LOGGER.info(f"optimizer : {type(optimizer).__name__}")
 
@@ -117,7 +113,7 @@ def train(params):
         mean_obj_loss = torch.zeros(1, device=device)
         for i, item in pbar:
             img, smnt, depth, labels = item
-            img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+            img = img.to(device, non_blocking=True)
             smnt = smnt.to(device)
             depth = depth.to(device)
             labels = labels.to(device)
@@ -126,7 +122,7 @@ def train(params):
 
             output = model(img)
 
-            loss, (smnt_loss, depth_loss, obj_loss) = compute_loss(output, (smnt, depth, labels))
+            loss, spilt_loss = compute_loss(output, (smnt, depth, labels))
 
             if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -137,30 +133,61 @@ def train(params):
             if RANK in [-1, 0]: # Process 0
                 safety_cpu(params.max_cpu)
                 mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
-                mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
-                mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
-                pbar.set_description(('epoch:%8s' + '  mem:%8s' + '      semantic:%6.6g' + '      depth:%6.6g' + '      obj:%6.6g') % (
-                        f'{epoch}/{epochs - 1}', mem, mean_smnt_loss, mean_depth_loss, mean_obj_loss))
+
+                log = ('epoch:%8s' + '  mem:%8s') % (f'{epoch}/{epochs - 1}', mem)
+                task = 0
+                if params.semantic_head != '':
+                    smnt_loss = spilt_loss[task]
+                    task+=1
+                    mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
+                    log += ('      semantic:%6.6g') % (mean_smnt_loss)
+
+                if params.depth_head != '':
+                    depth_loss = spilt_loss[task]
+                    task+=1
+                    mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
+                    log += ('      depth:%6.6g') % (mean_depth_loss)
+
+                if params.obj_head != '':
+                    obj_loss = spilt_loss[task]
+                    task+=1
+                    mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
+                    log += ('      obj:%6.6g') % (mean_obj_loss)
+
+                pbar.set_description(log)
         scheduler.step()
 
         if RANK in [-1, 0]: # Process 0
             # Test
-            (smnt_val_loss, depth_val_loss, obj_val_loss), (smnt_mean_iou_val, smnt_iou_array_val), depth_val, obj_ap \
-                = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
+            all_val_loss, all_val = val(params, save_dir=save_dir, model=model, device=device, compute_loss=compute_loss)
 
-            smnt_loss_history.append(mean_smnt_loss.detach().cpu().numpy())
-            depth_loss_history.append(mean_depth_loss.detach().cpu().numpy())
-            obj_loss_history.append(mean_obj_loss.detach().cpu().numpy())
-            smnt_val_loss_history.append(smnt_val_loss.detach().cpu().numpy())
-            depth_val_loss_history.append(depth_val_loss.detach().cpu().numpy())
-            obj_val_loss_history.append(obj_val_loss.detach().cpu().numpy())
+            task = 0
+            if params.semantic_head != '':
+                smnt_val_loss = all_val_loss[task]
+                (smnt_mean_iou_val, smnt_iou_array_val) = all_val[task]
+                task+=1
+                smnt_loss_history.append(mean_smnt_loss.detach().cpu().numpy())
+                smnt_val_loss_history.append(smnt_val_loss.detach().cpu().numpy())
+                mean_iou_history.append(smnt_mean_iou_val)
 
-            mean_iou_history.append(smnt_mean_iou_val)
-            d1_history.append(depth_val[-3])
-            d2_history.append(depth_val[-2])
-            d3_history.append(depth_val[-1])
-            ap_history.append(obj_ap)
+
+            if params.depth_head != '':
+                depth_val_loss = all_val_loss[task]
+                depth_val = all_val[task]
+                task+=1
+                depth_loss_history.append(mean_depth_loss.detach().cpu().numpy())
+                depth_val_loss_history.append(depth_val_loss.detach().cpu().numpy())
+                d1_history.append(depth_val[-3])
+                d2_history.append(depth_val[-2])
+                d3_history.append(depth_val[-1])
+
+            if params.obj_head != '':
+                obj_val_loss = all_val_loss[task]
+                obj_ap = all_val[task]
+                task+=1
+                obj_loss_history.append(mean_obj_loss.detach().cpu().numpy())
+                obj_val_loss_history.append(obj_val_loss.detach().cpu().numpy())
+                ap_history.append(obj_ap)
 
             # Save model
             if (epoch % params.save_cycle) == 0:
@@ -171,30 +198,46 @@ def train(params):
                 del ckpt
 
     if RANK in [-1, 0]: # Process 0
-        plt.plot(range(epochs), smnt_loss_history)
-        plt.plot(range(epochs), depth_loss_history)
-        plt.plot(range(epochs), obj_loss_history)
-        plt.plot(range(epochs), smnt_val_loss_history)
-        plt.plot(range(epochs), depth_val_loss_history)
-        plt.plot(range(epochs), obj_val_loss_history)
-        plt.legend(['semantic','depth', 'obj','semantic(val)','depth(val)', 'obj(val)'],loc='upper right')
-        plt.savefig(save_dir / 'loss_history.png')
-        plt.clf()
+        loss_hostpry_fig = plt.figure(0)
+        tmp_fig = plt.figure(1)
+        loss_hostpry = loss_hostpry_fig.add_subplot(1, 1, 1)
+        legend = []
+        if params.semantic_head != '':
+            loss_hostpry.plot(range(epochs), smnt_loss_history)
+            loss_hostpry.plot(range(epochs), smnt_val_loss_history)
+            legend += ['semantic','semantic(val)']
 
-        plt.plot(range(epochs), mean_iou_history)
-        plt.savefig(save_dir / 'mean_iou_history.png')
-        plt.clf()
+            sub_fig = tmp_fig.add_subplot(1, 1, 1)
+            sub_fig.plot(range(epochs), mean_iou_history)
+            tmp_fig.savefig(save_dir / 'mean_iou_history.png')
+            tmp_fig.clf()
 
-        plt.plot(range(epochs), d1_history)
-        plt.plot(range(epochs), d2_history)
-        plt.plot(range(epochs), d3_history)
-        plt.legend(['d1','d2','d3'])
-        plt.savefig(save_dir / 'depth_history.png')
-        plt.clf()
+        if params.depth_head != '':
+            loss_hostpry.plot(range(epochs), depth_loss_history)
+            loss_hostpry.plot(range(epochs), depth_val_loss_history)
+            legend += ['depth','depth(val)']
 
-        plt.plot(range(epochs), ap_history)
-        plt.savefig(save_dir / 'ap_history.png')
-        plt.clf()
+            sub_fig = tmp_fig.add_subplot(1, 1, 1)
+            sub_fig.plot(range(epochs), d1_history)
+            sub_fig.plot(range(epochs), d2_history)
+            sub_fig.plot(range(epochs), d3_history)
+            sub_fig.legend(['d1','d2','d3'])
+            tmp_fig.savefig(save_dir / 'depth_history.png')
+            tmp_fig.clf()
+
+        if params.obj_head != '':
+            loss_hostpry.plot(range(epochs), obj_loss_history)
+            loss_hostpry.plot(range(epochs), obj_val_loss_history)
+            legend += ['obj','obj(val)']
+
+            sub_fig = tmp_fig.add_subplot(1, 1, 1)
+            sub_fig.plot(range(epochs), ap_history)
+            tmp_fig.savefig(save_dir / 'ap_history.png')
+            tmp_fig.clf()
+
+        loss_hostpry.legend(legend,loc='upper right')
+        loss_hostpry_fig.savefig(save_dir / 'loss_history.png')
+        loss_hostpry_fig.clf()
 
 
 if __name__ == '__main__':

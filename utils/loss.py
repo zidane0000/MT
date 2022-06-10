@@ -375,22 +375,40 @@ class YOLO_loss:
 class ComputeLoss:
     def __init__(self, model):
         super(ComputeLoss, self).__init__()
-        self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
-        self.depth_loss_function = silog_loss()
 
-        if model.object_detection_decoder:
+        if hasattr(model, 'semantic_decoder'):
+            self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
+
+        if hasattr(model, 'depth_decoder'):
+            self.depth_loss_function = silog_loss()
+
+        if hasattr(model, 'object_detection_decoder'):
             self.obj_loss_function = YOLO_loss(model.object_detection_decoder)
 
     def __call__(self, predicts, targets):
-        (predict_smnt, predict_depth, predict_obj) = predicts
+        task = 0
+        task_res = []
         (target_smnt, target_depth, target_obj) = targets
 
-        depth_loss = self.depth_loss_function(predict_depth, target_depth)
-        depth_loss = torch.unsqueeze(depth_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+        if hasattr(self, 'semantic_loss_function'):
+            predict_smnt = predicts[task]
+            task += 1
+            smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
+            smnt_loss = torch.unsqueeze(smnt_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+            task_res.append(smnt_loss)
 
-        smnt_loss = self.semantic_loss_function(predict_smnt, target_smnt)
-        smnt_loss = torch.unsqueeze(smnt_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+        if hasattr(self, 'depth_loss_function'):
+            predict_depth = predicts[task]
+            task += 1
+            depth_loss = self.depth_loss_function(predict_depth, target_depth)
+            depth_loss = torch.unsqueeze(depth_loss, 0) # 0 dim to 1 dim, like 10 -> [10]
+            task_res.append(depth_loss)
 
-        obj_loss = self.obj_loss_function(predict_obj, target_obj)
+        if hasattr(self, 'obj_loss_function'):
+            predict_obj = predicts[task]
+            task += 1
+            predict_obj = predict_obj[1] if isinstance(predict_obj, tuple) else predict_obj
+            obj_loss = self.obj_loss_function(predict_obj, target_obj)
+            task_res.append(obj_loss)
 
-        return (smnt_loss + depth_loss + obj_loss), (smnt_loss, depth_loss, obj_loss)
+        return sum(task_res) , task_res

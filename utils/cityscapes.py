@@ -38,10 +38,12 @@ class Cityscapes(Dataset):
             transform: Optional[Callable] = None,
             random_flip: bool = False,
             random_crop: bool = False,
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
     ) -> None:
         super(Cityscapes, self).__init__()
         self.root = root
-        self.transform = transform
+        self.transform = self.input_transform
         self.height, self.width = input_height, input_width
         self.num_classes = num_classes
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
@@ -53,6 +55,8 @@ class Cityscapes(Dataset):
         self.random_crop = random_crop
         self.images = []
         self.targets = []
+        self.mean = mean
+        self.std = std
 
         verify_str_arg(mode, "mode", ("fine", "coarse"))
         if mode == "fine":
@@ -130,8 +134,6 @@ class Cityscapes(Dataset):
 
         if self.transform is not None:
             image = self.transform(image)
-            (smnt, depth) = self.transform((smnt, depth))
-            labels = self.transform(labels)
 
         num_labels = len(labels)  # number of labels
         labels_out = torch.zeros((num_labels, 6))
@@ -173,6 +175,12 @@ class Cityscapes(Dataset):
         elif target_type == 'label':#
             return 'leftImg8bit.txt'
 
+    def input_transform(self, image):
+        image = image.astype(np.float32)
+        image = image / 255.0
+        image -= self.mean
+        image /= self.std
+        return image
 
 def collate_fn(batch):
     images, smnts, depths, labels = zip(*batch)

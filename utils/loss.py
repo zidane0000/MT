@@ -43,148 +43,96 @@ class silog_loss(nn.Module):
         return torch.sqrt((d ** 2).mean() - self.variance_focus * (d.mean() ** 2)) * constant
 
 
-class CriterionDSN(nn.Module):
-    '''
-    DSN : We need to consider two supervision for the model.
-    '''
-    def __init__(self, ignore_index=255, use_weight=True, reduction='mean'):
-        super(CriterionDSN, self).__init__()
-        self.ignore_index = ignore_index
-        # 交叉熵計算Loss，忽略了255類，並且對Loss取了平均
-        self.criterion = torch.nn.CrossEntropyLoss(ignore_index=ignore_index, reduction=reduction)
-        if not reduction:
-            print("disabled the reduction.")
+class CrossEntropy(nn.Module):
+    def __init__(self, ignore_label=255, weight=None):
+        super(CrossEntropy, self).__init__()
+        self.ignore_label = ignore_label
+        self.criterion = nn.CrossEntropyLoss(
+            weight=weight,
+            ignore_index=ignore_label
+        )
 
-    def forward(self, preds, target):
+    def _forward(self, score, target):
+        ph, pw = score.size(2), score.size(3)
         h, w = target.size(1), target.size(2)
-        ph, pw = preds.size(2), preds.size(3)
-
         if ph != h or pw != w:
-            preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
+            score = F.interpolate(input=score, size=(
+                h, w), mode='bilinear', align_corners=True)
 
         if target.dtype != torch.long:
             target = target.to(torch.long)
-        loss = self.criterion(preds, target)
+
+        loss = self.criterion(score, target)
+
         return loss
 
+    def forward(self, score, target):
+        if isinstance(score, torch.Tensor):
+            score = [score]
+        weights = [0.4, 1] if len(score)==2 else [1]
+        return sum([w * self._forward(x, target) for (w, x) in zip(weights, score)])
 
-class OhemCrossEntropy2d(nn.Module):
-    def __init__(self, ignore_label=255, thresh=0.7, min_kept=100000, factor=8):
-        super(OhemCrossEntropy2d, self).__init__()
+
+class OhemCrossEntropy(nn.Module):
+    def __init__(self, ignore_label=255, thres=0.7,
+                 min_kept=100000, weight=None):
+        super(OhemCrossEntropy, self).__init__()
+        self.thresh = thres
+        self.min_kept = max(1, min_kept)
         self.ignore_label = ignore_label
-        self.thresh = float(thresh)
-        # self.min_kept_ratio = float(min_kept_ratio)
-        self.min_kept = int(min_kept)
-        self.factor = factor
-        self.criterion = torch.nn.CrossEntropyLoss(ignore_index=ignore_label)
+        self.criterion = nn.CrossEntropyLoss(
+            weight=weight,
+            ignore_index=ignore_label,
+            reduction='none'
+        )
 
-    """ 閾值的選取主要基於min_kept，用第min_kept個的概率來確定。且返回的閾值只能≥thresh。 """
-    def find_threshold(self, np_predict, np_target):
-        # downsample 1/8
-        factor = self.factor
-        predict = nd.zoom(np_predict, (1.0, 1.0, 1.0/factor, 1.0/factor), order=1) # 雙線性插值
-        target = nd.zoom(np_target, (1.0, 1.0/factor, 1.0/factor), order=0) # 最近臨插值
-
-        n, c, h, w = predict.shape
-        min_kept = self.min_kept // (factor*factor) #int(self.min_kept_ratio * n * h * w)
-
-        input_label = target.ravel().astype(np.int32) # 將多維數組轉化為一維
-        input_prob = np.rollaxis(predict, 1).reshape((c, -1))
-
-        valid_flag = input_label != self.ignore_label
-        valid_inds = np.where(valid_flag)[0]
-        label = input_label[valid_flag]
-        num_valid = valid_flag.sum()
-        if min_kept >= num_valid:
-            threshold = 1.0
-        elif num_valid > 0:
-            prob = input_prob[:,valid_flag]
-            pred = prob[label, np.arange(len(label), dtype=np.int32)]
-            threshold = self.thresh
-            if min_kept > 0:
-                k_th = min(len(pred), min_kept)-1
-                new_array = np.partition(pred, k_th)
-                new_threshold = new_array[k_th]
-                if new_threshold > self.thresh:
-                    threshold = new_threshold
-        return threshold
-
-    """
-        主要思路
-            1.先通過find_threshold找到一個合適的閾值如0.7
-            2.一次篩選出不為255的區域
-            3.再從中二次篩選找出對應預測值小於0.7的區域
-            4.重新生成一個label，label把預測值大於0.7和原本為255的位置 都置為255
-    """
-    def generate_new_target(self, predict, target):
-        np_predict = predict.data.cpu().numpy()
-        np_target = target.data.cpu().numpy()
-        n, c, h, w = np_predict.shape
-
-        threshold = self.find_threshold(np_predict, np_target)
-
-        input_label = np_target.ravel().astype(np.int32)
-        input_prob = np.rollaxis(np_predict, 1).reshape((c, -1))
-
-        valid_flag = input_label != self.ignore_label
-        valid_inds = np.where(valid_flag)[0]
-        label = input_label[valid_flag]
-        num_valid = valid_flag.sum()
-
-        if num_valid > 0:
-            prob = input_prob[:,valid_flag]
-            pred = prob[label, np.arange(len(label), dtype=np.int32)]
-            kept_flag = pred <= threshold
-            valid_inds = valid_inds[kept_flag]
-            # print('Labels: {} {}'.format(len(valid_inds), threshold))
-
-        label = input_label[valid_inds].copy()
-        input_label.fill(self.ignore_label)
-        input_label[valid_inds] = label
-        new_target = torch.from_numpy(input_label.reshape(target.size())).long().cuda(target.get_device())
-
-        return new_target
-
-    def forward(self, predict, target, weight=None):
-        """
-            Args:
-                predict:(n, c, h, w)
-                target:(n, h, w)
-                weight (Tensor, optional): a manual rescaling weight given to each class.
-                                           If given, has to be a Tensor of size "nclasses"
-        """
-        assert not target.requires_grad
-
-        input_prob = F.softmax(predict, 1)
-        target = self.generate_new_target(input_prob, target)
-
-        return self.criterion(predict, target)
-
-
-class CriterionOhemDSN(nn.Module):
-    '''
-    DSN : We need to consider two supervision for the model.
-    '''
-    def __init__(self, ignore_index=255, thresh=0.7, min_kept=100000, use_weight=True, reduction='mean'):
-        super(CriterionOhemDSN, self).__init__()
-        self.ignore_index = ignore_index
-        self.criterion1 = OhemCrossEntropy2d(ignore_index, thresh, min_kept)
-        self.criterion2 = torch.nn.CrossEntropyLoss(ignore_index=ignore_index, reduction=reduction)
-
-    def forward(self, preds, target):
+    def _ce_forward(self, score, target):
+        ph, pw = score.size(2), score.size(3)
         h, w = target.size(1), target.size(2)
-        ph, pw = preds.size(2), preds.size(3)
-
         if ph != h or pw != w:
-            preds = F.interpolate(input=preds, size=(h, w), mode='bilinear', align_corners=True)
+            score = F.interpolate(input=score, size=(
+                h, w), mode='bilinear', align_corners=True)
 
-        loss1 = self.criterion1(preds, target)
+        loss = self.criterion(score, target)
+
+        return loss
+
+    def _ohem_forward(self, score, target, **kwargs):
+        ph, pw = score.size(2), score.size(3)
+        h, w = target.size(1), target.size(2)
+        if ph != h or pw != w:
+            score = F.interpolate(input=score, size=(
+                h, w), mode='bilinear', align_corners=True)
+        pred = F.softmax(score, dim=1)
 
         if target.dtype != torch.long:
             target = target.to(torch.long)
-        loss2 = self.criterion2(preds, target)
 
-        return loss1 + loss2*0.4
+        pixel_losses = self.criterion(score, target).contiguous().view(-1)
+        mask = target.contiguous().view(-1) != self.ignore_label
+
+        tmp_target = target.clone()
+        tmp_target[tmp_target == self.ignore_label] = 0
+        pred = pred.gather(1, tmp_target.unsqueeze(1))
+        pred, ind = pred.contiguous().view(-1,)[mask].contiguous().sort()
+        min_value = pred[min(self.min_kept, pred.numel() - 1)]
+        threshold = max(min_value, self.thresh)
+
+        pixel_losses = pixel_losses[mask][ind]
+        pixel_losses = pixel_losses[pred < threshold]
+        return pixel_losses.mean()
+
+    def forward(self, score, target):
+        if isinstance(score, torch.Tensor):
+            score = [score]
+        weights = [0.4, 1] if len(score)==2 else [1]
+
+        functions = [self._ce_forward] * \
+            (len(weights) - 1) + [self._ohem_forward]
+        return sum([
+            w * func(x, target)
+            for (w, x, func) in zip(weights, score, functions)
+        ])
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
@@ -377,7 +325,7 @@ class ComputeLoss:
         super(ComputeLoss, self).__init__()
 
         if hasattr(model, 'semantic_decoder'):
-            self.semantic_loss_function = CriterionOhemDSN() # CriterionDSN()
+            self.semantic_loss_function = OhemCrossEntropy()
 
         if hasattr(model, 'depth_decoder'):
             self.depth_loss_function = silog_loss()

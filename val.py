@@ -354,6 +354,33 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         with torch.no_grad():
             output = model(img)
 
+        if compute_loss:
+            safety_cpu(params.max_cpu)
+            loss, spilt_loss = compute_loss(output, (smnt, depth, labels))
+            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+
+            log = (' '*16 + 'mem:%8s') % (mem)
+            task = 0
+            if params.semantic_head != '':
+                smnt_loss = spilt_loss[task]
+                task+=1
+                mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
+                log += ('      semantic:%6.6g') % (mean_smnt_loss)
+
+            if params.depth_head != '':
+                depth_loss = spilt_loss[task]
+                task+=1
+                mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
+                log += ('      depth:%6.6g') % (mean_depth_loss)
+
+            if params.obj_head != '':
+                obj_loss = spilt_loss[task]
+                task+=1
+                mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
+                log += ('      obj:%6.6g') % (mean_obj_loss)
+
+            val_bar.set_description(log)
+
         task = 0
         if params.semantic_head != '':
             predict_smnt = output[task]
@@ -437,33 +464,6 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
                 else:
                     correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
                 stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
-
-        if compute_loss:
-            safety_cpu(params.max_cpu)
-            loss, spilt_loss = compute_loss(output, (smnt, depth, labels))
-            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-
-            log = (' '*16 + 'mem:%8s') % (mem)
-            task = 0
-            if params.semantic_head != '':
-                smnt_loss = spilt_loss[task]
-                task+=1
-                mean_smnt_loss = (mean_smnt_loss * i + smnt_loss) / (i + 1)
-                log += ('      semantic:%6.6g') % (mean_smnt_loss)
-
-            if params.depth_head != '':
-                depth_loss = spilt_loss[task]
-                task+=1
-                mean_depth_loss = (mean_depth_loss * i + depth_loss) / (i + 1)
-                log += ('      depth:%6.6g') % (mean_depth_loss)
-
-            if params.obj_head != '':
-                obj_loss = spilt_loss[task]
-                task+=1
-                mean_obj_loss = (mean_obj_loss * i + obj_loss) / (i + 1)
-                log += ('      obj:%6.6g') % (mean_obj_loss)
-
-            val_bar.set_description(log)
 
         if params.plot:
             np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)

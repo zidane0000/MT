@@ -86,30 +86,35 @@ def compute_bts_eval(predicts, ground_truths, min_depth, max_depth):
     return silog.mean(), abs_rel.mean(), log10.mean(), rmse.mean(), sq_rel.mean(), rmse_log.mean(), d1.mean(), d2.mean(), d3.mean()
 
 
-# Inherit from yolo
-def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None):
-    """Performs Non-Maximum Suppression (NMS) on inference results
+# Inherit from yolor
+def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False, max_det=300):
+    """Runs Non-Maximum Suppression (NMS) on inference results
+
     Returns:
-         detections with shape: nx6 (x1, y1, x2, y2, conf, cls)
+         list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
 
     nc = prediction.shape[2] - 5  # number of classes
+    xc = prediction[..., 4] > conf_thres  # candidates
+
+    # Checks
+    assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
+    assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
 
     # Settings
-    # (pixels) minimum and maximum box width and height
-    max_wh = 4096
-    max_det = 300  # maximum number of detections per image
+    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
     max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
     time_limit = 10.0  # seconds to quit after
-    multi_label = nc > 1  # multiple labels per box (adds 0.5ms/img)
+    redundant = True  # require redundant detections
+    multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
+    merge = False  # use merge-NMS
 
     t = time.time()
-    output = [torch.zeros((0, 6), device="cpu")] * prediction.shape[0]
-
+    output = [torch.zeros((0, 6), device=prediction.device)] * prediction.shape[0]
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
-        x = x[x[..., 4] > conf_thres]  # confidence
+        x = x[xc[xi]]  # confidence
 
         # If none remain process next image
         if not x.shape[0]:
@@ -138,144 +143,87 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         if not n:  # no boxes
             continue
         elif n > max_nms:  # excess boxes
-            # sort by confidence
-            x = x[x[:, 4].argsort(descending=True)[:max_nms]]
+            x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence
 
         # Batched NMS
-        c = x[:, 5:6] * max_wh  # classes
-        # boxes (offset by class), scores
-        boxes, scores = x[:, :4] + c, x[:, 4]
+        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
+        boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         if i.shape[0] > max_det:  # limit detections
             i = i[:max_det]
+        if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
+            # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
+            iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
+            weights = iou * scores[None]  # box weights
+            x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
+            if redundant:
+                i = i[iou.sum(1) > 1]  # require redundancy
 
-        output[xi] = x[i].detach().cpu()
-
+        output[xi] = x[i]
         if (time.time() - t) > time_limit:
             print(f'WARNING: NMS time limit {time_limit}s exceeded')
             break  # time limit exceeded
+
     return output
 
 
-def bbox_iou(box1, box2, x1y1x2y2=True):
+def box_iou(box1, box2):
+    # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
     """
-    Returns the IoU of two bounding boxes
+    Return intersection-over-union (Jaccard index) of boxes.
+    Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
+    Arguments:
+        box1 (Tensor[N, 4])
+        box2 (Tensor[M, 4])
+    Returns:
+        iou (Tensor[N, M]): the NxM matrix containing the pairwise
+            IoU values for every element in boxes1 and boxes2
     """
-    if not x1y1x2y2:
-        # Transform from center and width to exact coordinates
-        b1_x1, b1_x2 = box1[:, 0] - box1[:, 2] / 2, box1[:, 0] + box1[:, 2] / 2
-        b1_y1, b1_y2 = box1[:, 1] - box1[:, 3] / 2, box1[:, 1] + box1[:, 3] / 2
-        b2_x1, b2_x2 = box2[:, 0] - box2[:, 2] / 2, box2[:, 0] + box2[:, 2] / 2
-        b2_y1, b2_y2 = box2[:, 1] - box2[:, 3] / 2, box2[:, 1] + box2[:, 3] / 2
-    else:
-        # Get the coordinates of bounding boxes
-        b1_x1, b1_y1, b1_x2, b1_y2 = \
-            box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
-        b2_x1, b2_y1, b2_x2, b2_y2 = \
-            box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
 
-    # get the corrdinates of the intersection rectangle
-    inter_rect_x1 = torch.max(b1_x1, b2_x1)
-    inter_rect_y1 = torch.max(b1_y1, b2_y1)
-    inter_rect_x2 = torch.min(b1_x2, b2_x2)
-    inter_rect_y2 = torch.min(b1_y2, b2_y2)
-    # Intersection area
-    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1 + 1, min=0) * torch.clamp(
-        inter_rect_y2 - inter_rect_y1 + 1, min=0
-    )
-    # Union Area
-    b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
-    b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
+    def box_area(box):
+        # box = 4xn
+        return (box[2] - box[0]) * (box[3] - box[1])
 
-    iou = inter_area / (b1_area + b2_area - inter_area + 1e-16)
+    area1 = box_area(box1.T)
+    area2 = box_area(box2.T)
 
-    return iou
+    # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
+    inter = (torch.min(box1[:, None, 2:], box2[:, 2:]) - torch.max(box1[:, None, :2], box2[:, :2])).clamp(0).prod(2)
+    return inter / (area1[:, None] + area2 - inter)  # iou = inter / (area1 + area2 - inter)
 
 
-def get_batch_statistics(outputs, targets, iou_threshold):
-    """ Compute true positives, predicted scores and predicted labels per sample """
-    batch_metrics = []
-    for sample_i in range(len(outputs)):
-
-        if outputs[sample_i] is None:
-            continue
-
-        output = outputs[sample_i]
-        output = output.to(targets.device)
-        pred_boxes = output[:, :4] #xyxy
-        pred_scores = output[:, 4]
-        pred_labels = output[:, -1]
-
-        true_positives = np.zeros(pred_boxes.shape[0])
-
-        annotations = targets[targets[:, 0] == sample_i][:, 1:]
-        target_labels = annotations[:, 0] if len(annotations) else []
-        if len(annotations):
-            detected_boxes = []
-            target_boxes = xywh2xyxy(annotations[:, 1:])
-
-            for pred_i, (pred_box, pred_label) in enumerate(zip(pred_boxes, pred_labels)):
-
-                # If targets are found break
-                if len(detected_boxes) == len(annotations):
-                    break
-
-                # Ignore if label is not one of the target labels
-                if pred_label not in target_labels:
-                    continue
-
-                # Filter target_boxes by pred_label so that we only match against boxes of our own label
-                filtered_target_position, filtered_targets = zip(*filter(lambda x: target_labels[x[0]] == pred_label, enumerate(target_boxes)))
-
-                # Find the best matching target for our predicted box
-                iou, box_filtered_index = bbox_iou(pred_box.unsqueeze(0), torch.stack(filtered_targets)).max(0)
-
-                # Remap the index in the list of filtered targets for that label to the index in the list with all targets.
-                box_index = filtered_target_position[box_filtered_index]
-
-                # Check if the iou is above the min treshold and i
-                if iou >= iou_threshold and box_index not in detected_boxes:
-                    true_positives[pred_i] = 1
-                    detected_boxes += [box_index]
-        batch_metrics.append([true_positives, pred_scores.cpu(), pred_labels.cpu()])
-    return batch_metrics
-
-
-def compute_ap(recall, precision):
-    """ Compute the average precision, given the recall and precision curves.
-    Code originally from https://github.com/rbgirshick/py-faster-rcnn.
-    # Arguments
-        recall:    The recall curve (list).
-        precision: The precision curve (list).
-    # Returns
-        The average precision as computed in py-faster-rcnn.
+def process_batch(detections, labels, iouv):
     """
-    # correct AP calculation
-    # first append sentinel values at the end
-    mrec = np.concatenate(([0.0], recall, [1.0]))
-    mpre = np.concatenate(([0.0], precision, [0.0]))
-
-    # compute the precision envelope
-    for i in range(mpre.size - 1, 0, -1):
-        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
-
-    # to calculate area under PR curve, look for points
-    # where X axis (recall) changes value
-    i = np.where(mrec[1:] != mrec[:-1])[0]
-
-    # and sum (\Delta recall) * prec
-    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
-    return ap
+    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
+    Arguments:
+        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
+        labels (Array[M, 5]), class, x1, y1, x2, y2
+    Returns:
+        correct (Array[N, 10]), for 10 IoU levels
+    """
+    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
+    iou = box_iou(labels[:, 1:], detections[:, :4])
+    x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    if x[0].shape[0]:
+        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
+        if x[0].shape[0] > 1:
+            matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            # matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+        matches = torch.Tensor(matches).to(iouv.device)
+        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
+    return correct
 
 
 def ap_per_class(tp, conf, pred_cls, target_cls, eps=1e-16):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
-        tp:    True positives (list).
-        conf:  Objectness value from 0-1 (list).
-        pred_cls: Predicted object classes (list).
-        target_cls: True object classes (list).
+        tp:  True positives (nparray, nx1 or nx10).
+        conf:  Objectness value from 0-1 (nparray).
+        pred_cls:  Predicted object classes (nparray).
+        target_cls:  True object classes (nparray).
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
@@ -285,65 +233,71 @@ def ap_per_class(tp, conf, pred_cls, target_cls, eps=1e-16):
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
 
     # Find unique classes
-    unique_classes = np.unique(target_cls)
+    unique_classes, nt = np.unique(target_cls, return_counts=True)
+    nc = unique_classes.shape[0]  # number of classes, number of detections
 
     # Create Precision-Recall curve and compute AP for each class
-    ap, p, r = [], [], []
+    px, py = np.linspace(0, 1, 1000), []  # for plotting
+    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
     for ci, c in enumerate(unique_classes):
         i = pred_cls == c
-        n_gt = (target_cls == c).sum()  # Number of ground truth objects
-        n_p = i.sum()  # Number of predicted objects
+        n_l = nt[ci]  # number of labels
+        n_p = i.sum()  # number of predictions
 
-        if n_p == 0 and n_gt == 0:
+        if n_p == 0 or n_l == 0:
             continue
-        elif n_p == 0 or n_gt == 0:
-            ap.append(0)
-            r.append(0)
-            p.append(0)
         else:
             # Accumulate FPs and TPs
-            fpc = (1 - tp[i]).cumsum()
-            tpc = (tp[i]).cumsum()
+            fpc = (1 - tp[i]).cumsum(0)
+            tpc = tp[i].cumsum(0)
 
             # Recall
-            recall_curve = tpc / (n_gt + 1e-16)
-            r.append(recall_curve[-1])
+            recall = tpc / (n_l + eps)  # recall curve
+            r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
 
             # Precision
-            precision_curve = tpc / (tpc + fpc)
-            p.append(precision_curve[-1])
+            precision = tpc / (tpc + fpc)  # precision curve
+            p[ci] = np.interp(-px, -conf[i], precision[:, 0], left=1)  # p at pr_score
 
             # AP from recall-precision curve
-            ap.append(compute_ap(recall_curve, precision_curve))
+            for j in range(tp.shape[1]):
+                ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
 
-    # Compute F1 score (harmonic mean of precision and recall)
-    p, r, ap = np.array(p), np.array(r), np.array(ap)
-    f1 = 2 * p * r / (p + r + 1e-16)
+    # Compute F1 (harmonic mean of precision and recall)
+    f1 = 2 * p * r / (p + r + eps)
+    i = f1.mean(0).argmax()  # max F1 index
+    p, r, f1 = p[:, i], r[:, i], f1[:, i]
+    tp = (r * nt).round()  # true positives
+    fp = (tp / (p + eps) - tp).round()  # false positives
+    return tp, fp, p, r, f1, ap, unique_classes.astype('int32')
 
-    return p, r, ap, f1, unique_classes.astype("int32")
 
-
-def compute_yolo_eval(predicts, ground_truths, conf_thres=0.25, nms_thres=0.4, iou_thres=0.5):
+def compute_ap(recall, precision):
+    """ Compute the average precision, given the recall and precision curves
+    # Arguments
+        recall:    The recall curve (list)
+        precision: The precision curve (list)
+    # Returns
+        Average precision, precision curve, recall curve
     """
-    conf_thres    : Object confidence threshold
-    nms_thres     : IOU threshold for non-maximum suppression
-    iou_thres     : IOU threshold required to qualify as detected
-    """
-    predicts = non_max_suppression(predicts, conf_thres=conf_thres, iou_thres=nms_thres)
-    batch_metrics = get_batch_statistics(predicts, ground_truths, iou_threshold=iou_thres)
-    return batch_metrics
 
+    # Append sentinel values to beginning and end
+    mrec = np.concatenate(([0.0], recall, [1.0]))
+    mpre = np.concatenate(([1.0], precision, [0.0]))
 
-def Concatenate_sample_statistics(sample_metrics, all_labels):
-    """
-    sample_metrics : List of tuples (TP, confs, pred)
-    """
-    # Concatenate sample statistics
-    true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
-    percision, recall, ap, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, all_labels)
-    mean_percision, mean_recall = percision.mean(), recall.mean()
-    meam_ap = ap.mean()
-    return mean_percision, mean_recall, meam_ap
+    # Compute the precision envelope
+    mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
+
+    # Integrate area under curve
+    method = 'interp'  # methods: 'continuous', 'interp'
+    if method == 'interp':
+        x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
+        ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
+    else:  # 'continuous'
+        i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x axis (recall) changes
+        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
+
+    return ap, mpre, mrec
 
 
 def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_loader=None):
@@ -385,7 +339,9 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     obj_val = 0
 
     all_labels = []
-    sample_metrics = []  # List of tuples (TP, confs, pred)
+    stats = []
+    iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
+    niou = iouv.numel()
 
     for i, item in val_bar:
         img, smnt, depth, labels = item
@@ -448,7 +404,39 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         if params.obj_head != '':
             (predict_obj, predict_train_obj) = output[task]
             task+=1
-            sample_metrics += compute_yolo_eval(predict_obj, labels)
+          
+            out = predict_obj
+            targets = labels
+            conf_thres = 0.001
+            iou_thres = 0.6
+            single_cls = False
+            
+            nb, _, height, width = img.shape
+            targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
+            out = non_max_suppression(out, conf_thres, iou_thres, multi_label=True, agnostic=single_cls)
+            for si, pred in enumerate(out):
+                labels = targets[targets[:, 0] == si, 1:]
+                nl = len(labels)
+                tcls = labels[:, 0].tolist() if nl else []  # target class
+
+                if len(pred) == 0:
+                    if nl:
+                        stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                    continue
+
+                # Predictions
+                if single_cls:
+                    pred[:, 5] = 0
+                predn = pred.clone()
+
+                # Evaluate
+                if nl:
+                    tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
+                    labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+                    correct = process_batch(predn, labelsn, iouv)
+                else:
+                    correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
+                stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
         if compute_loss:
             safety_cpu(params.max_cpu)
@@ -503,11 +491,16 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             all_val_loss.append(mean_depth_loss)
 
     if params.obj_head != '':
-        mean_percision, mean_recall, mean_ap = Concatenate_sample_statistics(sample_metrics, all_labels)
-        obj_val = mean_ap
-        LOGGER.info('mean_percision : %5.3f' % (mean_percision))
-        LOGGER.info('mean_recall    : %5.3f' % (mean_recall))
-        LOGGER.info('mean_ap        : %5.3f' % (mean_ap))
+        # Compute metrics
+        stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+        if len(stats) and stats[0].any():
+            tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats)
+            ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
+            mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        LOGGER.info('mean_percision : %5.3f' % (mp))
+        LOGGER.info('mean_recall    : %5.3f' % (mr))
+        LOGGER.info('mean_ap50      : %5.3f' % (map50))
+        obj_val = map50
         all_val.append(obj_val)
 
         if compute_loss:

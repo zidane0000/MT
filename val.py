@@ -415,9 +415,9 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
             out = non_max_suppression(out, conf_thres, iou_thres, multi_label=True, agnostic=single_cls)
             for si, pred in enumerate(out):
-                labels = targets[targets[:, 0] == si, 1:]
-                nl = len(labels)
-                tcls = labels[:, 0].tolist() if nl else []  # target class
+                in_targets = targets[targets[:, 0] == si, 1:]
+                nl = len(in_targets)
+                tcls = in_targets[:, 0].tolist() if nl else []  # target class
 
                 if len(pred) == 0:
                     if nl:
@@ -431,8 +431,8 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
 
                 # Evaluate
                 if nl:
-                    tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-                    labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+                    tbox = xywh2xyxy(in_targets[:, 1:5])  # target boxes
+                    labelsn = torch.cat((in_targets[:, 0:1], tbox), 1)  # native-space labels
                     correct = process_batch(predn, labelsn, iouv)
                 else:
                     correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
@@ -493,6 +493,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     if params.obj_head != '':
         # Compute metrics
         stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+        mp, mr, map50 = 0.0, 0.0, 0.0
         if len(stats) and stats[0].any():
             tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats)
             ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95

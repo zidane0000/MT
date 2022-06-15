@@ -17,7 +17,7 @@ try:
 except:
     from encoder import encoder
     from yolo import YOLOR_backbone, Detect, IDetect
-    from .neck import Neck
+    from neck import Neck
     from decoder.ccnet import CCNet, RCCAModule
     from decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from decoder.bts import bts, bts_4channel
@@ -61,8 +61,8 @@ class MTmodel(nn.Module):
         # Object detection
         self.obj_head = params.obj_head.lower()
         if self.obj_head == "yolo":
-            self.object_detection_neck = Neck(self.encoder.feat_out_channels[:4], self.encoder.feat_out_channels[:4])
-            self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels[:4])
+            self.object_detection_neck = Neck(self.encoder.feat_out_channels[-4:], self.encoder.feat_out_channels[-4:])
+            self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels[-4:])
             m = self.object_detection_decoder
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, 3, s, s))[-1]])  # forward
@@ -104,7 +104,7 @@ class MTmodel(nn.Module):
             res.append(final_depth)
 
         if self.obj_head:
-            neck_res = self.object_detection_neck(feature_maps[:4])
+            neck_res = self.object_detection_neck(feature_maps[-4:])
             objs = self.object_detection_decoder(neck_res) # input -> H/2, H/4, H/8, H/16
             res.append(objs)
 

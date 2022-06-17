@@ -268,8 +268,8 @@ if __name__ == '__main__':
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
 
     # Semantic Segmentation
-    parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
+    parser.add_argument('--smnt_num_classes',        type=int, help='Number of classes to predict (including background) for semantic segmentation.', default=19)
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
@@ -278,6 +278,7 @@ if __name__ == '__main__':
 
     # Object detection
     parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
+    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
     params = parser.parse_args()
 
     # Directories

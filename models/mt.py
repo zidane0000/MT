@@ -40,13 +40,13 @@ class MTmodel(nn.Module):
         self.semantic_head = params.semantic_head.lower()
         if self.semantic_head == "ccnet":
             self.recurrence = 2 # For 2 loop in RRCAModule
-            self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.num_classes, recurrence=self.recurrence)
-            # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.num_classes)
+            self.semantic_decoder = CCNet(inplanes=self.encoder.feat_out_channels[-1], num_classes=params.smnt_num_classes, recurrence=self.recurrence)
+            # self.semantic_decoder = RCCAModule(self.encoder.feat_out_channels[-1], 512, params.smnt_num_classes)
         elif self.semantic_head == "hrnet":
             self.semantic_neck = Neck(self.encoder.feat_out_channels[-4:], self.encoder.feat_out_channels[-4:])
             self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
         elif self.semantic_head == "espnet":
-            self.semantic_decoder = ESPNet_Decoder(classes=params.num_classes, input_channels=self.encoder.feat_out_channels[:3])
+            self.semantic_decoder = ESPNet_Decoder(classes=params.smnt_num_classes, input_channels=self.encoder.feat_out_channels[:3])
 
         # Depth
         self.depth_head = params.depth_head.lower()
@@ -62,7 +62,7 @@ class MTmodel(nn.Module):
         self.obj_head = params.obj_head.lower()
         if self.obj_head == "yolo":
             self.object_detection_neck = Neck(self.encoder.feat_out_channels[-4:], self.encoder.feat_out_channels[-4:])
-            self.object_detection_decoder = IDetect(ch=self.encoder.feat_out_channels[-4:])
+            self.object_detection_decoder = IDetect(nc=params.obj_num_classes, ch=self.encoder.feat_out_channels[-4:])
             m = self.object_detection_decoder
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, 3, s, s))[-1]])  # forward
@@ -117,8 +117,8 @@ if __name__ == '__main__':
     parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')
     parser.add_argument('--summary', action='store_true', help='Summary Model')
     # Semantic Segmentation
-    parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
+    parser.add_argument('--smnt_num_classes',        type=int, help='Number of classes to predict (including background) for semantic segmentation.', default=19)
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
@@ -127,6 +127,7 @@ if __name__ == '__main__':
 
     # Object detection
     parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
+    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
     params = parser.parse_args()
 
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -144,4 +145,3 @@ if __name__ == '__main__':
     ran = torch.rand((4, 3, 384, 768)).to(device)
     output = model.forward(ran)
     print("pass")
-    

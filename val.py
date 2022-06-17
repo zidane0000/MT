@@ -334,7 +334,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     mean_depth_loss = torch.zeros(1, device=device)
     mean_obj_loss = torch.zeros(1, device=device)
     smnt_mean_iou_val = 0
-    smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
+    smnt_iou_array_val = np.zeros((params.smnt_num_classes,params.smnt_num_classes))
     depth_val = np.zeros(9)
     obj_val = 0
 
@@ -393,7 +393,7 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             np_predict_smnt = predict_smnt.cpu().numpy()
             np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
             np_gt_smnt= smnt.cpu().numpy()
-            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
+            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.smnt_num_classes)
             smnt_mean_iou_val += miou
             smnt_iou_array_val += iou_array
 
@@ -565,7 +565,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
     # val result
     mean_loss = torch.zeros(1, device=device)
     smnt_mean_iou_val = 0
-    smnt_iou_array_val = np.zeros((params.num_classes,params.num_classes))
+    smnt_iou_array_val = np.zeros((params.smnt_num_classes,params.smnt_num_classes))
     depth_val = np.zeros(9)
 
     for i, item in val_bar:
@@ -598,7 +598,7 @@ def val_one(params, save_dir=None, model_type=None, model=None, device=None, com
             np_predict_smnt = predict_smnt.cpu().numpy()
             np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
             np_gt_smnt= smnt.cpu().numpy()
-            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.num_classes)
+            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.smnt_num_classes)
             smnt_mean_iou_val += miou
             smnt_iou_array_val += iou_array
 
@@ -673,8 +673,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_type',         type=str, default='mt', help='Choose Model Type by lower, mt or one model')
 
     # Semantic Segmentation
-    parser.add_argument('--num_classes',        type=int, help='Number of classes to predict (including background).', default=19)
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
+    parser.add_argument('--smnt_num_classes',        type=int, help='Number of classes to predict (including background) for semantic segmentation.', default=19)
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
@@ -683,6 +683,7 @@ if __name__ == '__main__':
 
     # Object detection
     parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
+    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
     params = parser.parse_args()
 
     params.model_type = params.model_type.lower()

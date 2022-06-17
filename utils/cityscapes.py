@@ -31,7 +31,7 @@ class Cityscapes(Dataset):
             root: str,
             input_height: int,
             input_width: int,
-            num_classes: int,
+            smnt_num_classes: int,
             split: str = "train",
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
@@ -45,7 +45,7 @@ class Cityscapes(Dataset):
         self.root = root
         self.transform = self.input_transform
         self.height, self.width = input_height, input_width
-        self.num_classes = num_classes
+        self.smnt_num_classes = smnt_num_classes
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
@@ -99,7 +99,7 @@ class Cityscapes(Dataset):
                     for t in self.target_type:
                         target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0], self._get_target_suffix(self.mode, t))
                         if t == 'label':
-                            target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels'))
+                            target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_cityscapes'))
                         else:
                             target_types.append(os.path.join(target_dir, target_name))
                     self.images.append(os.path.join(img_dir, file_name))
@@ -115,7 +115,7 @@ class Cityscapes(Dataset):
 
         smnt = cv2.imread(self.targets[index][0], cv2.IMREAD_GRAYSCALE)
         if self.targets[index][0].endswith('_labelIds.png'):
-            smnt = id2trainId(smnt, self.num_classes)
+            smnt = id2trainId(smnt, self.smnt_num_classes)
 
         depth = cv2.imread(self.targets[index][1], cv2.IMREAD_GRAYSCALE)
 
@@ -151,7 +151,7 @@ class Cityscapes(Dataset):
 
     def __len__(self) -> int:
         return len(self.images)
-        # return 50
+        # return 40
 
     def extra_repr(self) -> str:
         lines = ["Split: {split}", "Mode: {mode}", "Type: {target_type}"]
@@ -199,7 +199,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
     dataset = Cityscapes(params.root,
                         input_height=input_height,
                         input_width=input_width,
-                        num_classes=params.num_classes,
+                        smnt_num_classes=params.smnt_num_classes,
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity', 'label'],
@@ -272,7 +272,7 @@ if __name__ == '__main__':
     parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
     # Semantic Segmentation
-    parser.add_argument('--num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
+    parser.add_argument('--smnt_num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)

@@ -123,8 +123,9 @@ class Cityscapes(Dataset):
         label_path = self.targets[index][2]
         if os.path.isfile(label_path):
             with open(label_path) as f:
-                labels = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h
-                labels = np.array(labels, dtype=np.float32)
+                labels_split = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h                
+                if len(labels_split) > 0: # if txt not empty
+                    labels = np.array(labels_split, dtype=np.float32)
 
         if self.random_crop:
             image, (smnt, depth), labels = do_random_crop(image, [smnt, depth], labels, self.width, self.height)

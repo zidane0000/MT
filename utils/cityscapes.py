@@ -4,6 +4,7 @@ import os
 import cv2
 import random
 import torch
+import math
 import numpy as np
 
 from tqdm import tqdm
@@ -38,6 +39,7 @@ class Cityscapes(Dataset):
             transform: Optional[Callable] = None,
             random_flip: bool = False,
             random_crop: bool = False,
+            multi_scale: bool = False,
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
     ) -> None:
@@ -53,6 +55,7 @@ class Cityscapes(Dataset):
         self.split = split
         self.random_flip = random_flip
         self.random_crop = random_crop
+        self.multi_scale = multi_scale
         self.images = []
         self.targets = []
         self.mean = mean
@@ -110,7 +113,6 @@ class Cityscapes(Dataset):
         Args:
             index (int): Index
         """
-        # image = Image.open(self.images[index]).convert('RGB')
         image = cv2.imread(self.images[index], cv2.IMREAD_COLOR)
 
         smnt = cv2.imread(self.targets[index][0], cv2.IMREAD_GRAYSCALE)
@@ -123,7 +125,7 @@ class Cityscapes(Dataset):
         label_path = self.targets[index][2]
         if os.path.isfile(label_path):
             with open(label_path) as f:
-                labels_split = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h                
+                labels_split = [x.split() for x in f.read().strip().splitlines() if len(x)] # cls, x, y, w, h
                 if len(labels_split) > 0: # if txt not empty
                     labels = np.array(labels_split, dtype=np.float32)
 
@@ -183,13 +185,26 @@ class Cityscapes(Dataset):
         image /= self.std
         return image
 
-def collate_fn(batch):
-    images, smnts, depths, labels = zip(*batch)
+    def random_scale(self):
+        if not hasattr(self, 'origin_height'):
+            self.origin_height, self.origin_width = self.height, self.width        
 
-    for i, l in enumerate(labels):
-        l[:, 0] = i  # add target image index for build_targets()
+        if self.multi_scale:
+            scale = random.uniform(0.5, 1.0)
+            nearest_div = lambda x: math.ceil(int(x * scale) / 32) * 32
+            self.height = nearest_div(self.origin_height)
+            self.width = nearest_div(self.origin_width)
+        else:
+            self.height, self.width = self.origin_height, self.origin_width
 
-    return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0), torch.cat(labels, 0)
+    def collate_fn(self, batch):
+        self.random_scale()
+        images, smnts, depths, labels = zip(*batch)
+
+        for i, l in enumerate(labels):
+            l[:, 0] = i  # add target image index for build_targets()
+
+        return torch.stack(images, 0), torch.stack(smnts, 0), torch.stack(depths, 0), torch.cat(labels, 0)
 
 
 def Create_Cityscapes(params, mode='train', rank=-1):
@@ -205,7 +220,8 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         mode='fine',
                         target_type=['semantic', 'disparity', 'label'],
                         random_flip=params.random_flip,
-                        random_crop=params.random_crop)
+                        random_crop=params.random_crop,
+                        multi_scale=params.multi_scale)
     sampler = None if rank == -1 else get_sampler(dataset)
     dataloader = DataLoader(
                     dataset,
@@ -214,7 +230,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                     shuffle=True and sampler is None,
                     sampler=sampler,
                     pin_memory=True,
-                    collate_fn=collate_fn)
+                    collate_fn=dataset.collate_fn)
 
     return dataset, dataloader
 
@@ -272,6 +288,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_width',    type=int, help='input width',  default=1280)
     parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
+    parser.add_argument('--multi-scale',    action='store_true', help='random h and w in training')
     # Semantic Segmentation
     parser.add_argument('--smnt_num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 
@@ -302,5 +319,5 @@ if __name__ == '__main__':
 #         cv2.imwrite('img.jpg', np_img)
 
 #         np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])
-#         cv2.imwrite('np_img.jpg', np_img)
+#         cv2.imwrite('labels.jpg', np_img)
         input()

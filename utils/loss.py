@@ -39,7 +39,7 @@ class silog_loss(nn.Module):
         non_zero_mask = (predict_depth > 0) & (target_depth > 0)
         d = torch.log(predict_depth[non_zero_mask]) - torch.log(target_depth[non_zero_mask])
         # scaling the range of loss improve convergence and final result, and 10.0 is constant
-        constant = 10.0
+        constant = 1.0
         return torch.sqrt((d ** 2).mean() - self.variance_focus * (d.mean() ** 2)) * constant
 
 

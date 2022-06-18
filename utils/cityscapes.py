@@ -221,7 +221,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         target_type=['semantic', 'disparity', 'label'],
                         random_flip=params.random_flip,
                         random_crop=params.random_crop,
-                        multi_scale=params.multi_scale)
+                        multi_scale=params.multi_scale if mode=='train' else False)
     sampler = None if rank == -1 else get_sampler(dataset)
     dataloader = DataLoader(
                     dataset,

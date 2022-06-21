@@ -473,9 +473,9 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             if params.plot:
                 # Convert model output to target format [batch_id, class_id, x, y, w, h, conf]
                 targets = []
-                for i, o in enumerate(out):
+                for oi, o in enumerate(out):
                     for *box, conf, cls in o.cpu().numpy():
-                        targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
+                        targets.append([oi, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
                 targets = np.array(targets)
                 obj_img = plot_xywh(np_img, targets[targets[:,0]==0][:,1:6])
                 cv2.imwrite(str(save_dir) +'/obj-' + str(i) + '.jpg', obj_img)

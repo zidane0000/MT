@@ -262,12 +262,34 @@ def xyxy2xywh(x): # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] wher
     return y
 
 
-def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):
+class Colors:
+    # Ultralytics color palette https://ultralytics.com/
+    def __init__(self):
+        # hex = matplotlib.colors.TABLEAU_COLORS.values()
+        hex = ('FF3838', 'FF9D97', 'FF701F', 'FFB21D', 'CFD231', '48F90A', '92CC17', '3DDB86', '1A9334', '00D4BB',
+               '2C99A8', '00C2FF', '344593', '6473FF', '0018EC', '8438FF', '520085', 'CB38FF', 'FF95C8', 'FF37C7')
+        self.palette = [self.hex2rgb('#' + c) for c in hex]
+        self.n = len(self.palette)
+
+    def __call__(self, i, bgr=False):
+        c = self.palette[int(i) % self.n]
+        return (c[2], c[1], c[0]) if bgr else c
+
+    @staticmethod
+    def hex2rgb(h):  # rgb order (PIL)
+        return tuple(int(h[1 + i:1 + i + 2], 16) for i in (0, 2, 4))
+colors = Colors()
+
+def plot_xywh(img, labels):
     if len(labels) > 0:
         img = img.copy()
         if not img.flags["C_CONTIGUOUS"] or not img.flags["F_CONTIGUOUS"]:
             img = np.ascontiguousarray(img, dtype=np.uint8)
         img_h, img_w, ch = img.shape
+
+        line_width = max(round(sum(img.shape) / 2 * 0.003), 2)  # line width
+        font_thickness = max(line_width - 1, 1)  # font thickness
+
         for (c, x, y, w, h) in labels:
             if x > 1 or y > 1 or w > 1 or h > 1:
                 w_off = (w) / 2
@@ -279,8 +301,8 @@ def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):
                 h_off = (img_h * h) / 2
                 p1 = (int(img_w * x - w_off), int(img_h * y - h_off))
                 p2 = (int(img_w * x + w_off), int(img_h * y + h_off))
-            cv2.putText(img, str(int(c)), (p1[0], p1[1] - 2), cv2.FONT_HERSHEY_COMPLEX, 1, txt_color)
-            cv2.rectangle(img, p1, p2, color)
+            cv2.putText(img, str(int(c)), (p1[0], p1[1] - 2), cv2.FONT_HERSHEY_COMPLEX, line_width, colors(c), thickness=font_thickness, lineType=cv2.LINE_AA)
+            cv2.rectangle(img, p1, p2, colors(c), thickness=line_width, lineType=cv2.LINE_AA)
     return img
 
 

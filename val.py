@@ -532,141 +532,6 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         return all_val
 
 
-def val_one(params, save_dir=None, model_type=None, model=None, device=None, compute_loss=None, val_loader=None, task=None):
-    if save_dir is None:
-        save_dir = increment_path(Path(params.project) / params.name, exist_ok=params.exist_ok, mkdir=True)
-        LOGGER.info("saving to " + str(save_dir))
-
-    if model is None:
-        if model_type in ['ccnet','espnet', 'hrnet']:
-            task = 'smnt'
-            if model_type == 'espnet':
-                from models.decoder.espnet import ESPNet as OneModel
-            elif model_type == 'hrnet':
-                from models.decoder.hrnet_ocr import HighResolutionNet as OneModel, cfg as hrnet_cfg
-        elif model_type.lower() in ['bts','yolor']:
-            task = 'depth'
-            if model_type == 'bts':
-                from models.decoder.bts import BtsModel as OneModel
-            elif model_type == 'yolor':
-                from models.yolo import YOLOR_depth as OneModel
-        assert OneModel is not None, 'Unkown OneModel'
-        device = select_device(params.device)
-        LOGGER.info("begin load model with ckpt...")
-        ckpt = torch.load(params.weight)
-        cfg = hrnet_cfg if model_type == 'hrnet' else params
-        model = OneModel(cfg)
-        if device != 'cpu' and torch.cuda.device_count() > 1:
-            LOGGER.info("use multi-gpu, device=" + params.device)
-            device_ids = [int(i) for i in params.device.split(',')]
-            model = torch.nn.DataParallel(model, device_ids = device_ids)
-
-        # if pt is save from multi-gpu, model need para first, see https://blog.csdn.net/qq_32998593/article/details/89343507
-        model.load_state_dict(ckpt['model'])
-        model.to(device)
-        LOGGER.info(f"load model to device, from {params.weight}, epoch:{ckpt['epoch']}, train-time:{ckpt['date']}")
-    model.eval()
-
-    if task is None:
-        LOGGER.info("No define Task")
-        return None
-
-    # Dataset, DataLoader
-    if val_loader == None:
-        val_dataset, val_loader = create_dataloader(params, mode='val')
-
-    val_bar = enumerate(val_loader)
-    val_bar = tqdm(val_bar, total=len(val_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-
-    # val result
-    mean_loss = torch.zeros(1, device=device)
-    smnt_mean_iou_val = 0
-    smnt_iou_array_val = np.zeros((params.smnt_num_classes,params.smnt_num_classes))
-    depth_val = np.zeros(9)
-
-    for i, item in val_bar:
-        img, smnt, depth, labels = item
-        img = img.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-
-        if task == "depth":
-            gt = depth.to(device)
-        elif task == "smnt":
-            gt = smnt.to(device)
-        else:
-            gt = None
-
-        with torch.no_grad():
-            output = model(img)
-            output = output[-1] if model_type == 'yolor' else output
-
-        if compute_loss:
-            safety_cpu(params.max_cpu)
-            loss = compute_loss(output, gt)
-            mem = f'{torch.cuda.memory_reserved(device) / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            mean_loss = (mean_loss * i + loss) / (i + 1)
-            val_bar.set_description((' '*16 + 'mem:%8s' + '  loss:%6.6g') % (mem, mean_loss))
-
-        # upsample to origin size
-        if task == "smnt":
-            interp = torch.nn.Upsample(size=(params.input_height, params.input_width), mode='bilinear', align_corners=True)
-            predict_smnt = interp(output)
-
-            np_predict_smnt = predict_smnt.cpu().numpy()
-            np_predict_smnt = np.asarray(np.argmax(np_predict_smnt, axis=1), dtype=np.uint8) # batch, class, w, h -> batch, w, h
-            np_gt_smnt= smnt.cpu().numpy()
-            miou, iou_array = compute_ccnet_eval(np_predict_smnt, np_gt_smnt, params.smnt_num_classes)
-            smnt_mean_iou_val += miou
-            smnt_iou_array_val += iou_array
-
-            if params.plot:
-                np_gt_smnt = np_gt_smnt[0]
-                np_gt_smnt = id2trainId(np_gt_smnt, 255, reverse=True)
-                np_gt_smnt = put_palette(np_gt_smnt, num_classes=255, path=str(save_dir) +'/smnt-gt-' + str(i) + '.jpg')
-
-                np_predict_smnt = np_predict_smnt[0]
-                np_predict_smnt = id2trainId(np_predict_smnt, 255, reverse=True)
-                np_predict_smnt = put_palette(np_predict_smnt, num_classes=255, path=str(save_dir) +'/smnt-' + str(i) + '.jpg')
-        elif task == "depth":
-            np_predict_depth = output.cpu().numpy().squeeze().astype(np.float32)
-            np_gt_depth = depth.cpu().numpy().astype(np.float32)
-            depth_val += np.array(compute_bts_eval(np_predict_depth, np_gt_depth, params.min_depth, params.max_depth))
-
-            if params.plot:
-                np_predict_depth = np_predict_depth[0]
-                cv2.imwrite(str(save_dir) +'/depth-' + str(i) + '.jpg', np_predict_depth)
-
-                heat_predict_depth = (np_predict_depth * 255).astype('uint8')
-                heat_predict_depth = cv2.applyColorMap(heat_predict_depth, cv2.COLORMAP_JET)
-                cv2.imwrite(str(save_dir) +'/heat-' + str(i) + '.jpg', heat_predict_depth)
-
-                np_gt_depth = np_gt_depth[0]
-                cv2.imwrite(str(save_dir) +'/depth-gt-' + str(i) + '.jpg', np_gt_depth)
-
-                heat_gt_depth = (np_gt_depth * 255).astype('uint8')
-                heat_gt_depth = cv2.applyColorMap(heat_gt_depth, cv2.COLORMAP_JET)
-                cv2.imwrite(str(save_dir) +'/heat-gt-' + str(i) + '.jpg', heat_gt_depth)
-
-        if params.plot:
-            np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
-            cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
-
-    smnt_mean_iou_val /= len(val_bar)
-    smnt_iou_array_val /= len(val_bar)
-    depth_val /= len(val_bar)
-
-    if task== "smnt":
-        LOGGER.info('%8s : %4.4f  ' % ('mean-IOU', smnt_mean_iou_val))
-    elif task == "depth":
-        depth_val_str = ['silog','abs_rel','log10','rmse','sq_rel','rmse_log','d1','d2','d3']
-        for i in range(len(depth_val_str)):
-            LOGGER.info('%8s : %5.3f' % (depth_val_str[i], depth_val[i]))
-    LOGGER.info('-'*45)
-
-    if compute_loss:
-        return mean_loss, (smnt_mean_iou_val, smnt_iou_array_val), depth_val
-    else:
-        return (smnt_mean_iou_val, smnt_iou_array_val), depth_val
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root',               type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
@@ -685,9 +550,6 @@ if __name__ == '__main__':
     parser.add_argument('--random-flip',        action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',        action='store_true', help='crop the image and target')
 
-    # MT or One
-    parser.add_argument('--model_type',         type=str, default='mt', help='Choose Model Type by lower, mt or one model')
-
     # Semantic Segmentation
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')
     parser.add_argument('--smnt_num_classes',        type=int, help='Number of classes to predict (including background) for semantic segmentation.', default=19)
@@ -702,8 +564,4 @@ if __name__ == '__main__':
     parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
     params = parser.parse_args()
 
-    params.model_type = params.model_type.lower()
-    if params.model_type == 'mt':
-        val(params=params)
-    else:
-        val_one(params=params,model_type=params.model_type)
+    val(params=params)

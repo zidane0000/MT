@@ -7,7 +7,7 @@ import torchvision
 from tqdm import tqdm
 from pathlib import Path
 
-from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu, create_dataloader, xywh2xyxy
+from utils.general import increment_path, select_device, id2trainId, put_palette,LOGGER, reduce_tensor, safety_cpu, create_dataloader, xywh2xyxy, xyxy2xywh, plot_xywh
 from utils.cityscapes import Create_Cityscapes
 
 
@@ -381,6 +381,11 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
 
             val_bar.set_description(log)
 
+        if params.plot:
+            np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+            np_img = val_dataset.input_transform(np_img, reverse=True).astype(np.uint8)
+            cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
+
         task = 0
         if params.semantic_head != '':
             predict_smnt = output[task]
@@ -431,13 +436,13 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
         if params.obj_head != '':
             (predict_obj, predict_train_obj) = output[task]
             task+=1
-          
+
             out = predict_obj
             targets = labels
             conf_thres = 0.001
             iou_thres = 0.6
             single_cls = False
-            
+
             nb, _, height, width = img.shape
             targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
             out = non_max_suppression(out, conf_thres, iou_thres, multi_label=True, agnostic=single_cls)
@@ -465,9 +470,19 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
                     correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
                 stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
-        if params.plot:
-            np_img = (img[0] * 255).cpu().numpy().astype(np.int64).transpose(1,2,0)
-            cv2.imwrite(str(save_dir) +'/img-' + str(i) + '.jpg', np_img)
+            if params.plot:
+                # Convert model output to target format [batch_id, class_id, x, y, w, h, conf]
+                targets = []
+                for i, o in enumerate(out):
+                    for *box, conf, cls in o.cpu().numpy():
+                        targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
+                targets = np.array(targets)
+                obj_img = plot_xywh(np_img, targets[targets[:,0]==0][:,1:6])
+                cv2.imwrite(str(save_dir) +'/obj-' + str(i) + '.jpg', obj_img)
+
+                np_labels = labels.cpu().numpy().squeeze()
+                obj_gt_img = plot_xywh(np_img, np_labels[np_labels[:,0]==0][:,1:])
+                cv2.imwrite(str(save_dir) +'/obj-gt' + str(i) + '.jpg', obj_gt_img)
 
     all_val_loss = []
     all_val = []
@@ -493,15 +508,16 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     if params.obj_head != '':
         # Compute metrics
         stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-        mp, mr, map50 = 0.0, 0.0, 0.0
+        mp, mr, map50, map5095 = 0.0, 0.0, 0.0, 0.0
         if len(stats) and stats[0].any():
             tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats)
             ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-            mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+            mp, mr, map50, map5095 = p.mean(), r.mean(), ap50.mean(), ap.mean()
         LOGGER.info('mean_percision : %5.3f' % (mp))
         LOGGER.info('mean_recall    : %5.3f' % (mr))
         LOGGER.info('mean_ap50      : %5.3f' % (map50))
-        obj_val = map50
+        LOGGER.info('mean_ap      : %5.3f' % (map5095))
+        obj_val = (map50, map5095)
         all_val.append(obj_val)
 
         if compute_loss:

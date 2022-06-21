@@ -178,16 +178,21 @@ class Cityscapes(Dataset):
         elif target_type == 'label':#
             return 'leftImg8bit.txt'
 
-    def input_transform(self, image):
-        image = image.astype(np.float32)
-        image = image / 255.0
-        image -= self.mean
-        image /= self.std
+    def input_transform(self, image, reverse=False):
+        if reverse:
+            image *= self.std
+            image += self.mean
+            image = image * 255.0
+        else:
+            image = image.astype(np.float32)
+            image = image / 255.0
+            image -= self.mean
+            image /= self.std
         return image
 
     def random_scale(self):
         if not hasattr(self, 'origin_height'):
-            self.origin_height, self.origin_width = self.height, self.width        
+            self.origin_height, self.origin_width = self.height, self.width
 
         if self.multi_scale:
             scale = random.uniform(0.5, 1.0)

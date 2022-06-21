@@ -67,7 +67,8 @@ def train(params):
     d1_history = []
     d2_history = []
     d3_history = []
-    ap_history = []
+    map50_history = []
+    map5095_history = []
 
     # Scheduler
     if params.linear_learning_rate:
@@ -183,11 +184,12 @@ def train(params):
 
             if params.obj_head != '':
                 obj_val_loss = all_val_loss[task]
-                obj_ap = all_val[task]
+                obj_map50, obj_map5095 = all_val[task]
                 task+=1
                 obj_loss_history.append(mean_obj_loss.detach().cpu().numpy())
                 obj_val_loss_history.append(obj_val_loss.detach().cpu().numpy())
-                ap_history.append(obj_ap)
+                map50_history.append(obj_map50)
+                map5095_history.append(obj_map5095)
 
             # Save model
             if (epoch % params.save_cycle) == 0:
@@ -198,13 +200,13 @@ def train(params):
                 del ckpt
 
     if RANK in [-1, 0]: # Process 0
-        loss_hostpry_fig = plt.figure(0)
+        loss_history_fig = plt.figure(0)
         tmp_fig = plt.figure(1)
-        loss_hostpry = loss_hostpry_fig.add_subplot(1, 1, 1)
+        loss_history = loss_history_fig.add_subplot(1, 1, 1)
         legend = []
         if params.semantic_head != '':
-            loss_hostpry.plot(range(epochs), smnt_loss_history)
-            loss_hostpry.plot(range(epochs), smnt_val_loss_history)
+            loss_history.plot(range(epochs), smnt_loss_history)
+            loss_history.plot(range(epochs), smnt_val_loss_history)
             legend += ['semantic','semantic(val)']
 
             sub_fig = tmp_fig.add_subplot(1, 1, 1)
@@ -213,8 +215,8 @@ def train(params):
             tmp_fig.clf()
 
         if params.depth_head != '':
-            loss_hostpry.plot(range(epochs), depth_loss_history)
-            loss_hostpry.plot(range(epochs), depth_val_loss_history)
+            loss_history.plot(range(epochs), depth_loss_history)
+            loss_history.plot(range(epochs), depth_val_loss_history)
             legend += ['depth','depth(val)']
 
             sub_fig = tmp_fig.add_subplot(1, 1, 1)
@@ -226,18 +228,23 @@ def train(params):
             tmp_fig.clf()
 
         if params.obj_head != '':
-            loss_hostpry.plot(range(epochs), obj_loss_history)
-            loss_hostpry.plot(range(epochs), obj_val_loss_history)
+            loss_history.plot(range(epochs), obj_loss_history)
+            loss_history.plot(range(epochs), obj_val_loss_history)
             legend += ['obj','obj(val)']
 
             sub_fig = tmp_fig.add_subplot(1, 1, 1)
-            sub_fig.plot(range(epochs), ap_history)
-            tmp_fig.savefig(save_dir / 'ap_history.png')
+            sub_fig.plot(range(epochs), map50_history)
+            tmp_fig.savefig(save_dir / 'map50_history.png')
             tmp_fig.clf()
 
-        loss_hostpry.legend(legend,loc='upper right')
-        loss_hostpry_fig.savefig(save_dir / 'loss_history.png')
-        loss_hostpry_fig.clf()
+            sub_fig = tmp_fig.add_subplot(1, 1, 1)
+            sub_fig.plot(range(epochs), map5095_history)
+            tmp_fig.savefig(save_dir / 'map5095_history.png')
+            tmp_fig.clf()
+
+        loss_history.legend(legend,loc='upper right')
+        loss_history_fig.savefig(save_dir / 'loss_history.png')
+        loss_history_fig.clf()
 
 
 if __name__ == '__main__':

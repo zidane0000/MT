@@ -233,7 +233,6 @@ def xywh2xyxy(x): # xywh is center xy, width, height, xyxy is top-left point and
     dim = x.dim if isinstance(x, torch.Tensor) else x.ndim
     if dim == 1:
         y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
-        c, _, _, _, _ = y
         y[1] = x[1] - x[3] / 2  # top left x
         y[2] = x[2] - x[4] / 2  # top left y
         y[3] = x[1] + x[3] / 2  # bottom right x
@@ -246,16 +245,40 @@ def xywh2xyxy(x): # xywh is center xy, width, height, xyxy is top-left point and
         y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
     return y
 
+def xyxy2xywh(x): # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    dim = x.dim if isinstance(x, torch.Tensor) else x.ndim
+    if dim == 1:
+        y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+        y[0] = (x[0] + x[2]) / 2  # x center
+        y[1] = (x[1] + x[3]) / 2  # y center
+        y[2] = x[2] - x[0]  # width
+        y[3] = x[3] - x[1]  # height
+    else:
+        y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+        y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
+        y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
+        y[:, 2] = x[:, 2] - x[:, 0]  # width
+        y[:, 3] = x[:, 3] - x[:, 1]  # height
+    return y
+
 
 def plot_xywh(img, labels, color=(128, 128, 128), txt_color=(255, 255, 255)):
     if len(labels) > 0:
         img = img.copy()
+        if not img.flags["C_CONTIGUOUS"] or not img.flags["F_CONTIGUOUS"]:
+            img = np.ascontiguousarray(img, dtype=np.uint8)
         img_h, img_w, ch = img.shape
         for (c, x, y, w, h) in labels:
-            w_off = (img_w * w) / 2
-            h_off = (img_h * h) / 2
-            p1 = (int(img_w * x) - w_off, int(img_h * y) - h_off)
-            p2 = (int(img_w * x) + w_off, int(img_h * y) + h_off)
+            if x > 1 or y > 1 or w > 1 or h > 1:
+                w_off = (w) / 2
+                h_off = (h) / 2
+                p1 = (int(x - w_off), int(y - h_off))
+                p2 = (int(x + w_off), int(y + h_off))
+            else:
+                w_off = (img_w * w) / 2
+                h_off = (img_h * h) / 2
+                p1 = (int(img_w * x - w_off), int(img_h * y - h_off))
+                p2 = (int(img_w * x + w_off), int(img_h * y + h_off))
             cv2.putText(img, str(int(c)), (p1[0], p1[1] - 2), cv2.FONT_HERSHEY_COMPLEX, 1, txt_color)
             cv2.rectangle(img, p1, p2, color)
     return img

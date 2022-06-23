@@ -513,10 +513,12 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
             tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats)
             ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
             mp, mr, map50, map5095 = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        LOGGER.info('mean_percision : %5.3f' % (mp))
-        LOGGER.info('mean_recall    : %5.3f' % (mr))
-        LOGGER.info('mean_ap50      : %5.3f' % (map50))
-        LOGGER.info('mean_ap      : %5.3f' % (map5095))
+            nt = np.bincount(stats[3].astype(np.int64), minlength=params.obj_num_classes)  # number of targets per class
+            LOGGER.info(('%20s' + '%11s' * 5) % ('Class', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95'))
+            pf = '%20s' + '%11i' * 1 + '%11.3g' * 4  # print format
+            LOGGER.info(pf % ('all', nt.sum(), mp, mr, map50, map5095))
+            for i, c in enumerate(ap_class):
+                LOGGER.info(pf % (val_dataset.class_name[c], nt[c], p[i], r[i], ap50[i], ap[i]))
         obj_val = (map50, map5095)
         all_val.append(obj_val)
 

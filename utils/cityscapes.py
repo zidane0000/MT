@@ -33,6 +33,7 @@ class Cityscapes(Dataset):
             input_height: int,
             input_width: int,
             smnt_num_classes: int,
+            obj_num_classes: int,
             split: str = "train",
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
@@ -48,6 +49,7 @@ class Cityscapes(Dataset):
         self.transform = self.input_transform
         self.height, self.width = input_height, input_width
         self.smnt_num_classes = smnt_num_classes
+        self.obj_num_classes = obj_num_classes
         self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
         self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
         self.targets_dir = os.path.join(self.root, self.mode, split)
@@ -102,7 +104,22 @@ class Cityscapes(Dataset):
                     for t in self.target_type:
                         target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0], self._get_target_suffix(self.mode, t))
                         if t == 'label':
-                            target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_80classes'))
+                            if self.obj_num_classes == 10:
+                                target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_cityscapes'))
+                                self.class_name = ['car','person','motorcycle','bicycle','rider','bus','truck','trailer','caravan','train']
+                            elif self.obj_num_classes == 80:
+                                target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_80classes'))
+                                self.class_name = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+                                    'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+                                    'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+                                    'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+                                    'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+                                    'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+                                    'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+                                    'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+                                    'hair drier', 'toothbrush']
+                            else:
+                                raise RuntimeError('Unkown obj num in cityscapes')
                         else:
                             target_types.append(os.path.join(target_dir, target_name))
                     self.images.append(os.path.join(img_dir, file_name))
@@ -221,6 +238,7 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         input_height=input_height,
                         input_width=input_width,
                         smnt_num_classes=params.smnt_num_classes,
+                        obj_num_classes=params.obj_num_classes,
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity', 'label'],

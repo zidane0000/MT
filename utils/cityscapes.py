@@ -102,7 +102,7 @@ class Cityscapes(Dataset):
                     for t in self.target_type:
                         target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0], self._get_target_suffix(self.mode, t))
                         if t == 'label':
-                            target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_cityscapes'))
+                            target_types.append(os.path.join(target_dir, target_name).replace('gtFine', 'labels_80classes'))
                         else:
                             target_types.append(os.path.join(target_dir, target_name))
                     self.images.append(os.path.join(img_dir, file_name))

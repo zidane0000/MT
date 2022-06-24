@@ -12,7 +12,7 @@ This repo try to build MT model by opensource code from github
 ## Models
 <details><summary> <b>Expand</b> </summary>
 
-<img src="https://github.com/zidane0000/MT/blob/main/figure/proposed%20model%20v2.jpg" height="480">
+![proposed model](https://github.com/zidane0000/MT/blob/main/figure/proposed%20model%20v2.jpg)
 
 </details>
 

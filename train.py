@@ -98,6 +98,12 @@ def train(params):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
         LOGGER.info('Using DDP')
 
+    # Warm-Up
+    num_batches = len(train_loader)
+    num_warmup_iter = params.warmup * num_batches
+    warmup_bias_lr = 0.1  # warmup initial bias lr
+    warmup_momentum = 0.8  # warmup initial momentum
+
     for epoch in range(epochs):
         if RANK != -1:
             train_loader.sampler.set_epoch(epoch)
@@ -118,6 +124,16 @@ def train(params):
             smnt = smnt.to(device)
             depth = depth.to(device)
             labels = labels.to(device)
+
+            # Warm-up
+            ni = (i + num_batches * epoch)
+            if ni <= num_warmup_iter:
+                xi = [0, num_warmup_iter]  # x interp
+                for j, x in enumerate(optimizer.param_groups):
+                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+                    x['lr'] = np.interp(ni, xi, [warmup_bias_lr if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+                    if 'momentum' in x:
+                        x['momentum'] = np.interp(ni, xi, [warmup_momentum, params.momentum])
 
             optimizer.zero_grad()
 
@@ -255,6 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')
     parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
     parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=10)
+    parser.add_argument('--warmup',             type=int, help='epoch for warmpup', default=0)
     parser.add_argument('--batch-size',         type=int, help='total batch size for all GPUs', default=8)
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)
     parser.add_argument('--input_height',       type=int,   help='input height', default=256)

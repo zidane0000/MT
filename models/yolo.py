@@ -386,11 +386,11 @@ class Detect(nn.Module):
 
                 y = x[i].sigmoid()
                 if self.inplace:
-                    y[..., 0:2] = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    y[..., 0:2] = (y[..., 0:2].cuda() * 2 - 0.5 + self.grid[i].cuda()) * self.stride[i]  # xy
+                    y[..., 2:4] = (y[..., 2:4].cuda() * 2) ** 2 * self.anchor_grid[i].cuda()  # wh
                 else:  # for AWS Inferentia, Authored by https://github.com/jluntamazon
-                    xy = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    xy = (y[..., 0:2].cuda() * 2 - 0.5 + self.grid[i].cuda()) * self.stride[i]  # xy
+                    wh = (y[..., 2:4].cuda() * 2) ** 2 * self.anchor_grid[i].cuda()  # wh
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
                 z.append(y.view(bs, -1, self.no))
 

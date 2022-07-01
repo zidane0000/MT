@@ -40,6 +40,18 @@ def train(params):
     LOGGER.info("begin to bulid up model...")
     model = MTmodel(params).to(device)
     LOGGER.info("load model to device")
+    
+    # Pretrained
+    if params.weights != None:
+        print('=> loading pretrained model {}'.format(params.weights))
+        ckpt = torch.load(params.weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+        model_dict = model.state_dict()
+        pretrained_dict = ckpt['model']
+        pretrained_dict = {k.replace('module.', ''): v for k, v in pretrained_dict.items()} # remove if save by parallel
+        LOGGER.info(f'inhert : {len(set(model_dict) & set(pretrained_dict))} / {len(set(pretrained_dict))}')
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
 
     # Optimizer
     if params.adam:
@@ -96,7 +108,7 @@ def train(params):
     '''
     if cuda and RANK != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
-        LOGGER.info('Using DDP')
+        LOGGER.info('Using DDP')    
 
     # Warm-Up
     num_batches = len(train_loader)
@@ -269,8 +281,9 @@ if __name__ == '__main__':
     parser.add_argument('--project',            type=str, help='directory to save checkpoints and summaries', default='./runs/train/')
     parser.add_argument('--name',               type=str, help='save to project/name', default='mt')
     parser.add_argument('--encoder',            type=str, help='Choose Encoder in MT', default='densenet161')
-    parser.add_argument('--epochs',             type=int, help='number of epochs', default=50)
-    parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=10)
+    parser.add_argument('--weights',            type=str, help='initial weights path', default=None)
+    parser.add_argument('--epochs',             type=int, help='number of epochs', default=100)
+    parser.add_argument('--save-cycle',         type=int, help='save when cycle', default=50)
     parser.add_argument('--warmup',             type=int, help='epoch for warmpup', default=0)
     parser.add_argument('--batch-size',         type=int, help='total batch size for all GPUs', default=8)
     parser.add_argument('--workers',            type=int, help='maximum number of dataloader workers', default=8)

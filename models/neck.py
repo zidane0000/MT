@@ -67,92 +67,77 @@ class Concat(nn.Module):
 
 
 class Neck(nn.Module):
-    def __init__(self, ch_in, ch_out):  # ch_in, ch_out, shortcut, groups, expansion
+    def __init__(self, ch_in, ch_out, pan=True):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
-        assert len(ch_in) == len(ch_out) == 4, 'Neck need same num channel'
+        assert len(ch_in) == len(ch_out), 'Neck need same num channel'
+        
+        self.pan = pan # PAN architecture
+
+        ch_len = len(ch_in)
+        self.ch_len = ch_len
+        ch_neck = [128 + 128 * i for i in range(ch_len)] # Equivariance
 
         layers = []
-        layers.append(Conv(ch_in[3], 512, 1, 1)) # 4
-        layers.append(SPP(512, 512, (5, 9, 13)))
-        layers.append(Conv(512, 384, 1, 1))
-        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
+        # FPN
+        layers.append(Conv(ch_in[-1], ch_neck[ch_len - 1], 1, 1))
+        layers.append(SPP(ch_neck[-1], ch_neck[ch_len - 1], (5, 9, 13)))
 
-        layers.append(Conv(ch_in[2], 384, 1, 1)) # 8
-        layers.append(Concat())
-        layers.append(BottleneckCSP(768, 384))
-        layers.append(Conv(384, 256, 1, 1))
-        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
-
-        layers.append(Conv(ch_in[1], 256, 1, 1)) # 13
-        layers.append(Concat())
-        layers.append(BottleneckCSP(512, 256))
-        layers.append(Conv(256, 128, 1, 1))
-        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
-
-        layers.append(Conv(ch_in[0], 128, 1, 1)) # 18
-        layers.append(Concat())
-
+        for i in range(ch_len - 1):
+            layers.append(Conv(ch_neck[ch_len - 1 - i], ch_neck[ch_len - 2 - i], 1, 1))
+            layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
+            layers.append(Conv(ch_in[ch_len - 2 - i], ch_neck[ch_len - 2 - i], 1, 1))
+            layers.append(Concat())
+            if not (self.pan and i == (ch_len - 2)):
+                layers.append(BottleneckCSP(ch_neck[ch_len - 2 - i] * 2, ch_neck[ch_len - 2 - i]))
+        
         # PAN
-        layers.append(BottleneckCSP(256, 128))
-        layers.append(Conv(128, 256, 3, 2))
-        layers.append(Concat())
+        if self.pan:
+            for i in range(ch_len - 1):
+                layers.append(BottleneckCSP(ch_neck[i] * 2, ch_neck[i]))
+                layers.append(Conv(ch_neck[i], ch_neck[i+1], 3, 2))
+                layers.append(Concat())
+            layers.append(BottleneckCSP(ch_neck[ch_len - 1] * 2, ch_neck[ch_len - 1]))
 
-        layers.append(BottleneckCSP(512, 256))   # 23
-        layers.append(Conv(256, 384, 3, 2))
-        layers.append(Concat())
-
-        layers.append(BottleneckCSP(768, 384))   # 26
-        layers.append(Conv(384, 512, 3, 2))
-        layers.append(Concat())
-
-        layers.append(BottleneckCSP(1024, 512))  # 29
-
-        layers.append(Conv(128,ch_out[0],3,1))   # 30
-        layers.append(Conv(256,ch_out[1],3,1))   # 31
-        layers.append(Conv(384,ch_out[2],3,1))   # 32
-        layers.append(Conv(512,ch_out[3],3,1))   # 33
+        for i in range(ch_len):
+            layers.append(Conv(ch_neck[i],ch_out[i],3,1))
 
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
         layers = self.layers
+        ch_len = self.ch_len
+
+        posi = [] # record SPP and BottleneckCSP posi for concat
+
         x.append(layers[0](x[-1]))
         x.append(layers[1](x[-1]))
-        x.append(layers[2](x[-1]))
-        x.append(layers[3](x[-1]))
+        posi.append(len(x) - 1)
 
-        x.append(layers[4](x[2]))
-        x.append(layers[5]([x[-1], x[-2]]))
-        x.append(layers[6](x[-1]))
-        x.append(layers[7](x[-1]))
-        x.append(layers[8](x[-1]))
+        for i in range(ch_len - 1):
+            x.append(layers[2 + 5 * i](x[-1]))
+            x.append(layers[3 + 5 * i](x[-1]))
+            x.append(layers[4 + 5 * i](x[ch_len - 2 - i]))
+            x.append(layers[5 + 5 * i]([x[-1], x[-2]]))
+            if not (self.pan and i == (ch_len - 2)):
+                x.append(layers[6 + 5 * i](x[-1]))                
+                posi.append(len(x) - 1)
+        fpn_last = 5 + 5 * i
 
-        x.append(layers[9](x[1]))
-        x.append(layers[10]([x[-1], x[-2]]))
-        x.append(layers[11](x[-1]))
-        x.append(layers[12](x[-1]))
-        x.append(layers[13](x[-1]))
+        if self.pan:
+            posi_fpn = posi.copy()
+            for i in range(ch_len - 1):
+                x.append(layers[fpn_last + 1 + 3 * i](x[-1]))              
+                posi.append(len(x) - 1)
+                x.append(layers[fpn_last + 2 + 3 * i](x[-1]))
+                posi_fpn[ch_len - 2 - i]
+                x.append(layers[fpn_last + 3 + 3 * i]([x[-1], x[posi_fpn[ch_len - 2 - i]]]))
+            x.append(layers[fpn_last + 4 + 3 * i](x[-1]))
+            posi.append(len(x) - 1)
 
-        x.append(layers[14](x[0]))
-        x.append(layers[15]([x[-1], x[-2]]))
-        x.append(layers[16](x[-1]))
-        x.append(layers[17](x[-1]))
-
-        x.append(layers[18]([x[-1], x[15]]))
-        x.append(layers[19](x[-1]))
-        x.append(layers[20](x[-1]))
-        
-        x.append(layers[21]([x[-1], x[10]]))
-        x.append(layers[22](x[-1]))
-        x.append(layers[23](x[-1]))
-        
-        x.append(layers[24]([x[-1], x[5]]))
-        x.append(layers[25](x[-1]))
-
-        x.append(layers[26](x[20]))
-        x.append(layers[27](x[23]))
-        x.append(layers[28](x[26]))
-        x.append(layers[29](x[29]))
+        for i in range(ch_len):
+            print(posi[len(posi_fpn) + i])
+            print(len(x))
+            x.append(layers[i - ch_len](x[posi[len(posi_fpn) + i]]))
 
         x = x[-4:]
         return x

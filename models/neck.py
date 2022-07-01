@@ -69,33 +69,90 @@ class Concat(nn.Module):
 class Neck(nn.Module):
     def __init__(self, ch_in, ch_out):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
-        assert len(ch_in) == len(ch_out), 'Neck need same num channel'
-
-        self.num_inputs = len(ch_in) # number of inputs
+        assert len(ch_in) == len(ch_out) == 4, 'Neck need same num channel'
 
         layers = []
-        for i in range(self.num_inputs):
-            if i == 0:
-                layers.append(BottleneckCSP2(ch_in[i], ch_in[i]))
-            else:
-                layers.append(BottleneckCSP2(ch_out[i-1] + ch_in[i], ch_in[i]))
-            layers.append(Conv(ch_in[i], ch_in[i]))
-            layers.append(Conv(ch_in[i], ch_out[i]))
+        layers.append(Conv(ch_in[3], 512, 1, 1)) # 4
+        layers.append(SPP(512, 512, (5, 9, 13)))
+        layers.append(Conv(512, 384, 1, 1))
+        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
 
-            if i != (self.num_inputs-1):
-                layers.append(Concat())
+        layers.append(Conv(ch_in[2], 384, 1, 1)) # 8
+        layers.append(Concat())
+        layers.append(BottleneckCSP(768, 384))
+        layers.append(Conv(384, 256, 1, 1))
+        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
+
+        layers.append(Conv(ch_in[1], 256, 1, 1)) # 13
+        layers.append(Concat())
+        layers.append(BottleneckCSP(512, 256))
+        layers.append(Conv(256, 128, 1, 1))
+        layers.append(nn.Upsample(scale_factor=2, mode='nearest'))
+
+        layers.append(Conv(ch_in[0], 128, 1, 1)) # 18
+        layers.append(Concat())
+
+        # PAN
+        layers.append(BottleneckCSP(256, 128))
+        layers.append(Conv(128, 256, 3, 2))
+        layers.append(Concat())
+
+        layers.append(BottleneckCSP(512, 256))   # 23
+        layers.append(Conv(256, 384, 3, 2))
+        layers.append(Concat())
+
+        layers.append(BottleneckCSP(768, 384))   # 26
+        layers.append(Conv(384, 512, 3, 2))
+        layers.append(Concat())
+
+        layers.append(BottleneckCSP(1024, 512))  # 29
+
+        layers.append(Conv(128,ch_out[0],3,1))   # 30
+        layers.append(Conv(256,ch_out[1],3,1))   # 31
+        layers.append(Conv(384,ch_out[2],3,1))   # 32
+        layers.append(Conv(512,ch_out[3],3,1))   # 33
 
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
-        for i in range(self.num_inputs):
-            Bottleneck_out = self.layers[i*4](x[i])
-            Conv1_out = self.layers[i*4+1](Bottleneck_out)
-            x[i] = self.layers[i*4+2](Conv1_out)
+        layers = self.layers
+        x.append(layers[0](x[-1]))
+        x.append(layers[1](x[-1]))
+        x.append(layers[2](x[-1]))
+        x.append(layers[3](x[-1]))
 
-            if i != (self.num_inputs-1):
-                if x[i].shape[2:] != x[i+1].shape[2:]:
-                    x[i+1] = self.layers[i*4+3]((F.interpolate(x[i], size=x[i+1].shape[2:], mode='bilinear', align_corners=True), x[i+1]))
-                else:
-                    x[i+1] = self.layers[i*4+3]((x[i], x[i+1]))
+        x.append(layers[4](x[2]))
+        x.append(layers[5]([x[-1], x[-2]]))
+        x.append(layers[6](x[-1]))
+        x.append(layers[7](x[-1]))
+        x.append(layers[8](x[-1]))
+
+        x.append(layers[9](x[1]))
+        x.append(layers[10]([x[-1], x[-2]]))
+        x.append(layers[11](x[-1]))
+        x.append(layers[12](x[-1]))
+        x.append(layers[13](x[-1]))
+
+        x.append(layers[14](x[0]))
+        x.append(layers[15]([x[-1], x[-2]]))
+        x.append(layers[16](x[-1]))
+        x.append(layers[17](x[-1]))
+
+        x.append(layers[18]([x[-1], x[15]]))
+        x.append(layers[19](x[-1]))
+        x.append(layers[20](x[-1]))
+        
+        x.append(layers[21]([x[-1], x[10]]))
+        x.append(layers[22](x[-1]))
+        x.append(layers[23](x[-1]))
+        
+        x.append(layers[24]([x[-1], x[5]]))
+        x.append(layers[25](x[-1]))
+
+        x.append(layers[26](x[20]))
+        x.append(layers[27](x[23]))
+        x.append(layers[28](x[26]))
+        x.append(layers[29](x[29]))
+
+        x = x[-4:]
         return x

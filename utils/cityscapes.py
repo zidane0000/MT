@@ -38,10 +38,11 @@ class Cityscapes(Dataset):
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
             transform: Optional[Callable] = None,
-            random_hw: bool = False,
-            random_flip: bool = False,
-            random_crop: bool = False,
-            multi_scale: bool = False, # Image will be scaled proportionally
+            augment:bool = False,
+            random_hw: float = 0.5,
+            random_flip: float = 0.5,
+            random_crop: float = 0.5,
+            multi_scale: float = 0.5, # Image will be scaled proportionally
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
     ) -> None:
@@ -56,6 +57,8 @@ class Cityscapes(Dataset):
         self.targets_dir = os.path.join(self.root, self.mode, split)
         self.target_type = target_type
         self.split = split
+        self.augment = augment
+        self.albumentations = Albumentations() if augment else None
         self.random_hw = random_hw
         self.random_flip = random_flip
         self.random_crop = random_crop
@@ -148,28 +151,32 @@ class Cityscapes(Dataset):
                 if len(labels_split) > 0: # if txt not empty
                     labels = np.array(labels_split, dtype=np.float32)
 
-        # Multi-scale
-        if self.multi_scale:
-            origin_h, origin_w = image.shape[:2]  # orig hw
-            random_ratio = np.random.rand(1)
-            new_w = int(self.width + (origin_w - self.width) * random_ratio)
-            new_h = int(self.height + (origin_h - self.height) * random_ratio)
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-            smnt = cv2.resize(smnt, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-            depth = cv2.resize(depth, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        if self.augment:
+            # Albumentations
+            image = self.albumentations(image)
+            
+            # Multi-scale
+            if random.random() < self.multi_scale:
+                origin_h, origin_w = image.shape[:2]  # orig hw
+                random_ratio = np.random.rand(1)
+                new_w = int(self.width + (origin_w - self.width) * random_ratio)
+                new_h = int(self.height + (origin_h - self.height) * random_ratio)
+                image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                smnt = cv2.resize(smnt, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+                depth = cv2.resize(depth, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
-        if self.random_crop:
-            image, (smnt, depth), labels = do_random_crop(image, [smnt, depth], labels, self.width, self.height)
+            if random.random() < self.random_crop:
+                image, (smnt, depth), labels = do_random_crop(image, [smnt, depth], labels, self.width, self.height)
 
-        if self.random_flip:
-            image, (smnt, depth), labels = do_random_flip(image, [smnt, depth], labels)
+            if random.random() < self.random_flip:
+                image, (smnt, depth), labels = do_random_flip(image, [smnt, depth], labels)
+
+            # Brightness
+            brightness = random.uniform(0.9, 1.1)
+            image = image * brightness
 
         if self.transform is not None:
             image = self.transform(image)
-
-        # Brightness
-        brightness = random.uniform(0.9, 1.1)
-        image = image * brightness
 
         num_labels = len(labels)  # number of labels
         labels_out = torch.zeros((num_labels, 6))
@@ -258,7 +265,8 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity', 'label'],
-                        random_hw=params.random_hw if mode=='train' else False,
+                        augment=params.augment if mode=='train' else False,
+                        random_hw=params.random_hw,
                         random_flip=params.random_flip,
                         random_crop=params.random_crop,
                         multi_scale=params.multi_scale)
@@ -276,15 +284,15 @@ def Create_Cityscapes(params, mode='train', rank=-1):
 
 
 def do_random_flip(image, target, labels):
-    up_down_flip = -1 # np.random.choice(2) * 2 - 1
-    left_right_flip = np.random.choice(2) * 2 - 1 # 1 or -1
-    image = image[::left_right_flip, ::up_down_flip].copy()
+    image = np.fliplr(image)
+    # image = np.flipud(image)
 
     for i in range(len(target)):
-        target[i] = target[i][::left_right_flip, ::up_down_flip].copy()
-
-    labels[:, 1] = labels[:, 1] if up_down_flip == 1 else 1 - labels[:, 1]
-    labels[:, 2] = labels[:, 2] if left_right_flip == 1 else 1 - labels[:, 2]
+        target[i] = np.fliplr(target[i])
+        # target[i] = np.flipud(target[i])
+    
+    labels[:, 1] = 1 - labels[:, 1]
+    # labels[:, 2] = 1 - labels[:, 2]
     return image, target, labels
 
 
@@ -319,6 +327,34 @@ def do_random_crop(image, target, labels, input_width, input_height):
     return image, target, labels
 
 
+class Albumentations:
+    # YOLOv5 Albumentations class (optional, only used if package is installed)
+    def __init__(self):
+        self.transform = None
+        try:
+            import albumentations as A
+
+            T = [
+                A.Blur(p=0.01),
+                A.MedianBlur(p=0.01),
+                A.CLAHE(p=0.01),]  # transforms
+            self.transform = A.Compose(T)
+
+            print('albumentations: ' + ', '.join(f'{x}' for x in self.transform.transforms if x.p))
+        except ImportError:  # package not installed, skip
+            print('no import')
+            input()
+            pass
+        except Exception as e:
+            print(f'albumentations: + {e}')
+
+    def __call__(self, im, p=1.0):
+        if self.transform and random.random() < p:
+            new = self.transform(image=im)  # transformed
+            im = new['image']
+        return im
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root',           type=str, default='/home/user/hdd2/Autonomous_driving/datasets/cityscapes', help='root for Cityscapes')
@@ -326,10 +362,14 @@ if __name__ == '__main__':
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',   type=int, help='input height', default=640)
     parser.add_argument('--input_width',    type=int, help='input width',  default=1280)
-    parser.add_argument('--random-hw',      action='store_true', help='random h and w in training')
-    parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
-    parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
-    parser.add_argument('--multi-scale',    action='store_true', help='Image will be scaled proportionally')
+    
+    # Augment
+    parser.add_argument('--augment',        action='store_true', help='set for open augment')
+    parser.add_argument('--random-hw',      type=float, default=0.5, help='random h and w in training')
+    parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')
+    parser.add_argument('--random-crop',    type=float, default=0.5, help='crop the image and target')
+    parser.add_argument('--multi-scale',    type=float, default=0.5, help='Image will be scaled proportionally')
+
     # Semantic Segmentation
     parser.add_argument('--smnt_num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 
@@ -359,10 +399,10 @@ if __name__ == '__main__':
 #         heat_depth = cv2.applyColorMap(heat_depth, cv2.COLORMAP_JET)
 #         cv2.imwrite('heat.jpg', heat_depth)
 
-#         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
-#         np_img = train_dataset.input_transform(np_img, reverse=True)
-#         cv2.imwrite('img.jpg', np_img)
+        np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+        np_img = train_dataset.input_transform(np_img, reverse=True)
+        cv2.imwrite('img.jpg', np_img)
 
-#         np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])
-#         cv2.imwrite('labels.jpg', np_img)
+        np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])
+        cv2.imwrite('labels.jpg', np_img)
         input()

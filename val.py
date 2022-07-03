@@ -549,10 +549,12 @@ if __name__ == '__main__':
     parser.add_argument('--device',             default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--exist-ok',           action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot',               action='store_true', help='plot the loss and eval result')
-    parser.add_argument('--random-hw',      action='store_true', help='random h and w in training')
-    parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
-    parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
-    parser.add_argument('--multi-scale',    action='store_true', help='Image will be scaled proportionally')
+    # Augment
+    parser.add_argument('--augment',        action='store_true', help='set for open augment')
+    parser.add_argument('--random-hw',      type=float, default=0.5, help='random h and w in training')
+    parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')
+    parser.add_argument('--random-crop',    type=float, default=0.5, help='crop the image and target')
+    parser.add_argument('--multi-scale',    type=float, default=0.5, help='Image will be scaled proportionally')
 
     # Semantic Segmentation
     parser.add_argument('--semantic_head',      type=str, help='Choose method for semantic head(CCNet/HRNet/ESPNet)', default='CCNet')

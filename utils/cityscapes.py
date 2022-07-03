@@ -38,9 +38,10 @@ class Cityscapes(Dataset):
             mode: str = "fine",
             target_type: Union[List[str], str] = "instance",
             transform: Optional[Callable] = None,
+            random_hw: bool = False,
             random_flip: bool = False,
             random_crop: bool = False,
-            multi_scale: bool = False,
+            multi_scale: bool = False, # Image will be scaled proportionally
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
     ) -> None:
@@ -55,6 +56,7 @@ class Cityscapes(Dataset):
         self.targets_dir = os.path.join(self.root, self.mode, split)
         self.target_type = target_type
         self.split = split
+        self.random_hw = random_hw
         self.random_flip = random_flip
         self.random_crop = random_crop
         self.multi_scale = multi_scale
@@ -146,6 +148,16 @@ class Cityscapes(Dataset):
                 if len(labels_split) > 0: # if txt not empty
                     labels = np.array(labels_split, dtype=np.float32)
 
+        # Multi-scale
+        if self.multi_scale:
+            origin_h, origin_w = image.shape[:2]  # orig hw
+            random_ratio = np.random.rand(1)
+            new_w = int(self.width + (origin_w - self.width) * random_ratio)
+            new_h = int(self.height + (origin_h - self.height) * random_ratio)
+            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            smnt = cv2.resize(smnt, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+            depth = cv2.resize(depth, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
         if self.random_crop:
             image, (smnt, depth), labels = do_random_crop(image, [smnt, depth], labels, self.width, self.height)
 
@@ -154,6 +166,10 @@ class Cityscapes(Dataset):
 
         if self.transform is not None:
             image = self.transform(image)
+
+        # Brightness
+        brightness = random.uniform(0.9, 1.1)
+        image = image * brightness
 
         num_labels = len(labels)  # number of labels
         labels_out = torch.zeros((num_labels, 6))
@@ -207,11 +223,11 @@ class Cityscapes(Dataset):
             image /= self.std
         return image
 
-    def random_scale(self):
+    def rand_hw(self):
         if not hasattr(self, 'origin_height'):
             self.origin_height, self.origin_width = self.height, self.width
 
-        if self.multi_scale:
+        if self.random_hw:
             scale = random.uniform(0.5, 1.0)
             nearest_div = lambda x: math.ceil(int(x * scale) / 32) * 32
             self.height = nearest_div(self.origin_height)
@@ -220,7 +236,7 @@ class Cityscapes(Dataset):
             self.height, self.width = self.origin_height, self.origin_width
 
     def collate_fn(self, batch):
-        self.random_scale()
+        self.rand_hw()
         images, smnts, depths, labels = zip(*batch)
 
         for i, l in enumerate(labels):
@@ -242,9 +258,10 @@ def Create_Cityscapes(params, mode='train', rank=-1):
                         split=mode,
                         mode='fine',
                         target_type=['semantic', 'disparity', 'label'],
+                        random_hw=params.random_hw if mode=='train' else False,
                         random_flip=params.random_flip,
                         random_crop=params.random_crop,
-                        multi_scale=params.multi_scale if mode=='train' else False)
+                        multi_scale=params.multi_scale)
     sampler = None if rank == -1 else get_sampler(dataset)
     dataloader = DataLoader(
                     dataset,
@@ -259,8 +276,8 @@ def Create_Cityscapes(params, mode='train', rank=-1):
 
 
 def do_random_flip(image, target, labels):
-    up_down_flip = np.random.choice(2) * 2 - 1
-    left_right_flip = np.random.choice(2) * 2 - 1
+    up_down_flip = -1 # np.random.choice(2) * 2 - 1
+    left_right_flip = np.random.choice(2) * 2 - 1 # 1 or -1
     image = image[::left_right_flip, ::up_down_flip].copy()
 
     for i in range(len(target)):
@@ -309,15 +326,19 @@ if __name__ == '__main__':
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',   type=int, help='input height', default=640)
     parser.add_argument('--input_width',    type=int, help='input width',  default=1280)
+    parser.add_argument('--random-hw',      action='store_true', help='random h and w in training')
     parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
     parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
-    parser.add_argument('--multi-scale',    action='store_true', help='random h and w in training')
+    parser.add_argument('--multi-scale',    action='store_true', help='Image will be scaled proportionally')
     # Semantic Segmentation
     parser.add_argument('--smnt_num_classes',            type=int, help='Number of classes to predict (including background).', default=19)
 
     # Depth Estimation
     parser.add_argument('--min_depth',     type=float, help='minimum depth for evaluation', default=1e-3)
     parser.add_argument('--max_depth',     type=float, help='maximum depth for evaluation', default=80.0)
+
+    # Object detection
+    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
     params = parser.parse_args()
     train_dataset, train_loader = Create_Cityscapes(params, mode='train')
 
@@ -339,6 +360,7 @@ if __name__ == '__main__':
 #         cv2.imwrite('heat.jpg', heat_depth)
 
 #         np_img = (img[0]).cpu().numpy().transpose(1,2,0)
+#         np_img = train_dataset.input_transform(np_img, reverse=True)
 #         cv2.imwrite('img.jpg', np_img)
 
 #         np_img = plot_xywh(np_img, labels[labels[:,0]==0][:,1:])

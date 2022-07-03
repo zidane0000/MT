@@ -299,9 +299,10 @@ if __name__ == '__main__':
     parser.add_argument('--linear-learning-rate', action='store_true', help='linear Learning Rate or cosine curve')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--plot', action='store_true', help='plot the loss and eval result')
-    parser.add_argument('--random-flip', action='store_true', help='flip the image and target')
-    parser.add_argument('--random-crop', action='store_true', help='crop the image and target')
-    parser.add_argument('--multi-scale',    action='store_true', help='random h and w in training')
+    parser.add_argument('--random-hw',      action='store_true', help='random h and w in training')
+    parser.add_argument('--random-flip',    action='store_true', help='flip the image and target')
+    parser.add_argument('--random-crop',    action='store_true', help='crop the image and target')
+    parser.add_argument('--multi-scale',    action='store_true', help='Image will be scaled proportionally')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
 

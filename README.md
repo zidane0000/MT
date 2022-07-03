@@ -37,7 +37,7 @@ This repo try to build MT model by opensource code from github
 ```
 python train.py --device 0,1,2,3 \
     --root {your dataset path} \
-    --random-flip --random-crop --multi-scale \ # Optional
+    --augment \ # Optional
     --epochs 100 --save-cycle 90 \
     --input_height 512  --input_width 1024 \
     --encoder resnet50 \
@@ -53,7 +53,7 @@ python train.py --device 0,1,2,3 \
 ```
 python train.py --device 0,1,2,3 \
     --root {your dataset path} \
-    --random-flip --random-crop --multi-scale \ # Optional
+    --augment \ # Optional
     --epochs 100 --save-cycle 90 \
     --input_height 512  --input_width 1024 \
     --encoder resnet50 \

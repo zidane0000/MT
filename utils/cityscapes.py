@@ -342,8 +342,7 @@ class Albumentations:
 
             print('albumentations: ' + ', '.join(f'{x}' for x in self.transform.transforms if x.p))
         except ImportError:  # package not installed, skip
-            print('no import')
-            input()
+            print('no import albumentations')
             pass
         except Exception as e:
             print(f'albumentations: + {e}')

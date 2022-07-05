@@ -284,7 +284,7 @@ def plot_xywh(img, labels):
     if len(labels) > 0:
         img = img.copy()
         if not img.flags["C_CONTIGUOUS"] or not img.flags["F_CONTIGUOUS"]:
-            img = np.ascontiguousarray(img, dtype=np.uint8)
+            img = np.ascontiguousarray(img)
         img_h, img_w, ch = img.shape
 
         line_width = max(round(sum(img.shape) / 2 * 0.003), 2)  # line width

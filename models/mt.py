@@ -46,7 +46,8 @@ class MTmodel(nn.Module):
             self.semantic_neck = Neck(self.encoder.feat_out_channels[-4:], self.encoder.feat_out_channels[-4:])
             self.semantic_decoder = HighResolutionDecoder(cfg, self.encoder.feat_out_channels[-4:])
         elif self.semantic_head == "espnet":
-            self.semantic_decoder = ESPNet_Decoder(classes=params.smnt_num_classes, input_channels=self.encoder.feat_out_channels[:3])
+            self.semantic_neck = Neck(self.encoder.feat_out_channels[-3:], self.encoder.feat_out_channels[-3:])
+            self.semantic_decoder = ESPNet_Decoder(classes=params.smnt_num_classes, input_channels=self.encoder.feat_out_channels[-3:])
 
         # Depth
         self.depth_head = params.depth_head.lower()
@@ -94,7 +95,8 @@ class MTmodel(nn.Module):
                 neck_res = self.semantic_neck(feature_maps[-4:])
                 res.append(self.semantic_decoder(neck_res))
             elif self.semantic_head == "espnet":
-                res.append(self.semantic_decoder(feature_maps[:3]))
+                neck_res = self.semantic_neck(feature_maps[-3:])
+                res.append(self.semantic_decoder(neck_res))
             else:
                 raise Exception(f'ERROR: Unkown Semnatic head {self.semantic_head}')
 

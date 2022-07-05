@@ -93,9 +93,11 @@ class OhemCrossEntropy(nn.Module):
             score = F.interpolate(input=score, size=(
                 h, w), mode='bilinear', align_corners=True)
 
-        loss = self.criterion(score, target)
+        if target.dtype != torch.long:
+            target = target.to(torch.long)
 
-        return loss
+        loss = self.criterion(score, target)
+        return loss.mean()
 
     def _ohem_forward(self, score, target, **kwargs):
         ph, pw = score.size(2), score.size(3)

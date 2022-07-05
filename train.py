@@ -40,7 +40,7 @@ def train(params):
     LOGGER.info("begin to bulid up model...")
     model = MTmodel(params).to(device)
     LOGGER.info("load model to device")
-    
+
     # Pretrained
     if params.weights != None:
         print('=> loading pretrained model {}'.format(params.weights))
@@ -56,7 +56,7 @@ def train(params):
     # Optimizer
     if params.adam:
         optimizer = Adam([{'params': model.parameters()}],
-                         lr=params.learning_rate, betas=(params.momentum, 0.999))
+                         lr=params.learning_rate, betas=(params.momentum, 0.999), eps=1e-08, weight_decay=params.weight_decay)
     else:
         optimizer = SGD([{'params': model.parameters(), 'weight_decay': params.weight_decay}],
                          lr=params.learning_rate, momentum=params.momentum)
@@ -108,7 +108,7 @@ def train(params):
     '''
     if cuda and RANK != -1:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
-        LOGGER.info('Using DDP')    
+        LOGGER.info('Using DDP')
 
     # Warm-Up
     num_batches = len(train_loader)
@@ -303,7 +303,7 @@ if __name__ == '__main__':
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     # Augment
     parser.add_argument('--augment',        action='store_true', help='set for open augment')
-    parser.add_argument('--random-hw',      type=float, default=0.5, help='random h and w in training')
+    parser.add_argument('--random-hw',      type=float, default=0.0, help='random h and w in training')
     parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')
     parser.add_argument('--random-crop',    type=float, default=0.5, help='crop the image and target')
     parser.add_argument('--multi-scale',    type=float, default=0.5, help='Image will be scaled proportionally')

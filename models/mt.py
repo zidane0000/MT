@@ -14,6 +14,7 @@ try:
     from .decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from .decoder.bts import bts, bts_4channel
     from .decoder.espnet import ESPNet_Decoder
+    from .decoder.pspnet import PSPDecoder
 except:
     from encoder import encoder
     from yolo import YOLOR_backbone, Detect, IDetect
@@ -22,6 +23,7 @@ except:
     from decoder.hrnet_ocr import HighResolutionDecoder, cfg
     from decoder.bts import bts, bts_4channel
     from decoder.espnet import ESPNet_Decoder
+    from decoder.pspnet import PSPDecoder
 
 
 class MTmodel(nn.Module):
@@ -48,6 +50,9 @@ class MTmodel(nn.Module):
         elif self.semantic_head == "espnet":
             self.semantic_neck = Neck(self.encoder.feat_out_channels[-3:], self.encoder.feat_out_channels[-3:])
             self.semantic_decoder = ESPNet_Decoder(classes=params.smnt_num_classes, input_channels=self.encoder.feat_out_channels[-3:])
+        elif self.semantic_head == "pspnet":
+            self.semantic_neck = Neck(self.encoder.feat_out_channels[-2:], self.encoder.feat_out_channels[-2:])
+            self.semantic_decoder = PSPDecoder(input_channels=self.encoder.feat_out_channels[-2:], classes=params.smnt_num_classes, dropout=0.1, use_ppm=True)
 
         # Depth
         self.depth_head = params.depth_head.lower()
@@ -66,7 +71,7 @@ class MTmodel(nn.Module):
             self.object_detection_decoder = IDetect(nc=params.obj_num_classes, ch=self.encoder.feat_out_channels[-4:])
             m = self.object_detection_decoder
             s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, 3, s, s))[-1]])  # forward
+            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(2, 3, s, s))[-1]])  # forward
             m.anchors /= m.stride.view(-1, 1, 1)
 
             # Check anchor order against stride order for Detect() module m, and correct if necessary
@@ -97,8 +102,10 @@ class MTmodel(nn.Module):
             elif self.semantic_head == "espnet":
                 neck_res = self.semantic_neck(feature_maps[-3:])
                 res.append(self.semantic_decoder(neck_res))
-            else:
-                raise Exception(f'ERROR: Unkown Semnatic head {self.semantic_head}')
+            elif self.semantic_head == "pspnet":
+                neck_res = self.semantic_neck(feature_maps[-2:])
+                res.append(self.semantic_decoder(neck_res))
+                
 
         if self.depth_head:
             neck_res = self.depth_neck(feature_maps)

@@ -477,7 +477,9 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
                     for *box, conf, cls in o.cpu().numpy():
                         targets.append([oi, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
                 targets = np.array(targets)
-                obj_img = plot_xywh(np_img, targets[targets[:,0]==0][:,1:6])
+                targets = targets[targets[:,0]==0]
+                targets = targets[targets[:,6]>0.25]
+                obj_img = plot_xywh(np_img, targets[:,1:6])
                 cv2.imwrite(str(save_dir) +'/obj-' + str(i) + '.jpg', obj_img)
 
                 np_labels = labels.cpu().numpy().squeeze()

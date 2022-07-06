@@ -154,7 +154,7 @@ class Cityscapes(Dataset):
         if self.augment:
             # Albumentations
             image = self.albumentations(image)
-            
+
             # Multi-scale
             if random.random() < self.multi_scale:
                 origin_h, origin_w = image.shape[:2]  # orig hw
@@ -290,7 +290,7 @@ def do_random_flip(image, target, labels):
     for i in range(len(target)):
         target[i] = np.fliplr(target[i])
         # target[i] = np.flipud(target[i])
-    
+
     labels[:, 1] = 1 - labels[:, 1]
     # labels[:, 2] = 1 - labels[:, 2]
     return image, target, labels
@@ -361,10 +361,10 @@ if __name__ == '__main__':
     parser.add_argument('--workers',        type=int, default=8, help='maximum number of dataloader workers')
     parser.add_argument('--input_height',   type=int, help='input height', default=640)
     parser.add_argument('--input_width',    type=int, help='input width',  default=1280)
-    
+
     # Augment
     parser.add_argument('--augment',        action='store_true', help='set for open augment')
-    parser.add_argument('--random-hw',      type=float, default=0.5, help='random h and w in training')
+    parser.add_argument('--random-hw',      type=float, default=0.0, help='random h and w in training')
     parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')
     parser.add_argument('--random-crop',    type=float, default=0.5, help='crop the image and target')
     parser.add_argument('--multi-scale',    type=float, default=0.5, help='Image will be scaled proportionally')

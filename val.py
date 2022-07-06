@@ -553,7 +553,7 @@ if __name__ == '__main__':
     parser.add_argument('--plot',               action='store_true', help='plot the loss and eval result')
     # Augment
     parser.add_argument('--augment',        action='store_true', help='set for open augment')
-    parser.add_argument('--random-hw',      type=float, default=0.5, help='random h and w in training')
+    parser.add_argument('--random-hw',      type=float, default=0.0, help='random h and w in training')
     parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')
     parser.add_argument('--random-crop',    type=float, default=0.5, help='crop the image and target')
     parser.add_argument('--multi-scale',    type=float, default=0.5, help='Image will be scaled proportionally')

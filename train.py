@@ -126,6 +126,11 @@ def train(params):
         if RANK in [-1, 0]: # Process 0
             pbar = tqdm(pbar, total=len(train_loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
+        # Strategy
+        if params.strategy:
+            from strategy import Strategy3 as Strategy
+            model, compute_loss = Strategy(params, epoch, epochs, model)
+
         # mean loss
         mean_smnt_loss = torch.zeros(1, device=device)
         mean_depth_loss = torch.zeros(1, device=device)
@@ -219,6 +224,24 @@ def train(params):
                 map50_history.append(obj_map50)
                 map5095_history.append(obj_map5095)
 
+            if params.strategy:
+                max_len = max([len(smnt_loss_history), len(depth_loss_history), len(obj_loss_history)])
+                if params.semantic_head == '':
+                    smnt_loss_history.append(None)
+                    smnt_val_loss_history.append(None)
+                    mean_iou_history.append(None)
+                if params.depth_head == '':
+                    depth_loss_history.append(None)
+                    depth_val_loss_history.append(None)
+                    d1_history.append(None)
+                    d2_history.append(None)
+                    d3_history.append(None)
+                if params.obj_head == '':
+                    obj_loss_history.append(None)
+                    obj_val_loss_history.append(None)
+                    map50_history.append(None)
+                    map5095_history.append(None)
+
             # Save model
             if (epoch % params.save_cycle) == 0:
                 ckpt = {'epoch': epoch,
@@ -302,6 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     # Augment
+    parser.add_argument('--strategy',       action='store_true', help='use strategy to train model')
     parser.add_argument('--augment',        action='store_true', help='set for open augment')
     parser.add_argument('--random-hw',      type=float, default=0.0, help='random h and w in training')
     parser.add_argument('--random-flip',    type=float, default=0.5, help='flip the image and target')

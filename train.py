@@ -343,7 +343,7 @@ if __name__ == '__main__':
 
     # Object detection
     parser.add_argument('--obj_head',      type=str, help='Choose method for obj detection head', default='yolo')
-    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=80)
+    parser.add_argument('--obj_num_classes',        type=int, help='Number of classes to predict (including background) for object detection.', default=10)
     params = parser.parse_args()
 
     # Directories

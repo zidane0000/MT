@@ -68,7 +68,7 @@ class MTmodel(nn.Module):
         self.obj_head = params.obj_head.lower()
         if self.obj_head == "yolo":
             self.object_detection_neck = Neck(self.encoder.feat_out_channels[-4:], self.encoder.feat_out_channels[-4:])
-            self.object_detection_decoder = IDetect(nc=params.obj_num_classes, ch=self.encoder.feat_out_channels[-4:])
+            self.object_detection_decoder = Detect(nc=params.obj_num_classes, ch=self.encoder.feat_out_channels[-4:])
             m = self.object_detection_decoder
             s = 256  # 2x min stride
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(2, 3, s, s))[-1]])  # forward

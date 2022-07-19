@@ -2,6 +2,7 @@ import argparse
 import torch
 import torch.nn as nn
 import functools
+import timm
 
 from inplace_abn import InPlaceABN, InPlaceABNSync
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='identity')
@@ -147,11 +148,14 @@ class encoder(nn.Module):
             layers = [3, 4, 23, 3]
             self.base_model = CCNet_resnet50(Bottleneck, layers)
             self.feat_out_channels = [64, 64, 128, 128, 2048]
+        elif params.encoder == 'cspdarknet53':
+            self.base_model = timm.create_model(params.encoder, features_only=True, out_indices=[1,2,3,4,5], pretrained=True)
+            self.feat_out_channels = self.base_model.feature_info.channels()
         else:
             LOGGER.error('Not supported encoder: {}'.format(params.encoder))
 
     def forward(self, x):
-        if self.params.encoder == 'CCNet_resnet50':
+        if self.params.encoder in ['CCNet_resnet50', 'cspdarknet53']:
             return self.base_model(x)
 
         feature = x

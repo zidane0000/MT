@@ -203,7 +203,7 @@ def detect(params, save_dir=None, model=None, device=None):
     if len(dataset) > 1 and save_video:
         # fourcc = cv2.VideoWriter_fourcc(*"XVID")  # 影片編碼格式
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        fps = 1 # 30
+        fps = 30
         out_video_path = str(save_dir) + '/detect.mp4'
         height, width = 1024, 2048
         cap_out = cv2.VideoWriter(out_video_path, fourcc, fps, (width, height))
@@ -212,9 +212,6 @@ def detect(params, save_dir=None, model=None, device=None):
     
     count = 0
     for path, img, cap, log in dataset:
-        count += 1
-        if count >= 30:
-            continue
         t1 = time_sync()
         img = torch.Tensor(img).to(device)
         img /= 255  # 0 - 255 to 0.0 - 1.0
@@ -280,6 +277,10 @@ def detect(params, save_dir=None, model=None, device=None):
             np_predict_smnt = cv2.resize(np_predict_smnt, (each_width, each_height), interpolation=cv2.INTER_NEAREST)
             np_predict_depth = cv2.resize(np_predict_depth, (each_width, each_height), interpolation=cv2.INTER_NEAREST)
             np_predict_obj = cv2.resize(np_predict_obj, (each_width, each_height), interpolation=cv2.INTER_LINEAR)
+
+            cv2.putText(np_predict_smnt, 'Semantic segmetation', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(np_predict_depth, 'Depth estimation', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(np_predict_obj, 'Object detection', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 1, cv2.LINE_AA)
             
             np_predict_depth = cv2.cvtColor(np_predict_depth,cv2.COLOR_GRAY2BGR).astype(np.uint8)
             img_top = cv2.hconcat([np_img, np_predict_obj])
@@ -296,7 +297,7 @@ def detect(params, save_dir=None, model=None, device=None):
             if params.obj_head != '':
                 cv2.imwrite(str(save_dir) +'/'+ ori_name +'_obj.jpg', np_predict_obj)
             
-        LOGGER.info(f'{log}Done. (inference+{t3 - t2:.3f}s smnt+{t4 - t5:.3f}s depth+{t6 - t5:.3f}s obj+{t7 - t6:.3f}s)')
+        LOGGER.info(f'{log}Done. (inference+{t3 - t2:.3f}s smnt+{t5 - t4:.3f}s depth+{t6 - t5:.3f}s obj+{t7 - t6:.3f}s)')
             
 
     if save_video:

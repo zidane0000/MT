@@ -72,6 +72,18 @@ class CrossEntropy(nn.Module):
         weights = [0.4, 1] if len(score)==2 else [1]
         return sum([w * self._forward(x, target) for (w, x) in zip(weights, score)])
 
+class_weights = [0.8373, 0.9180, 0.8660, 1.0345,
+                 1.0166, 0.9969, 0.9754, 1.0489,
+                 0.8786, 1.0023, 0.9539, 0.9843, 
+                 1.1116, 0.9037, 1.0865, 1.0955, 
+                 1.0865, 1.1529, 1.0507]
+
+SEG_CLASS_WEIGHTS = [
+    2.8149201869965, 6.9850029945374, 3.7890393733978, 9.9428062438965,
+    9.7702074050903, 9.5110931396484, 10.311357498169, 10.026463508606,
+    4.6323022842407, 9.5608062744141, 7.8698215484619, 9.5168733596802,
+    10.373730659485, 6.6616044044495, 10.260489463806, 10.287888526917,
+    10.289801597595, 10.405355453491, 10.138095855713, 0]
 
 class OhemCrossEntropy(nn.Module):
     def __init__(self, ignore_label=255, thres=0.7,
@@ -80,6 +92,7 @@ class OhemCrossEntropy(nn.Module):
         self.thresh = thres
         self.min_kept = max(1, min_kept)
         self.ignore_label = ignore_label
+#         weight = torch.FloatTensor(SEG_CLASS_WEIGHTS).cuda() # class_weights SEG_CLASS_WEIGHTS
         self.criterion = nn.CrossEntropyLoss(
             weight=weight,
             ignore_index=ignore_label,

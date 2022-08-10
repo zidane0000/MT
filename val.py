@@ -338,14 +338,12 @@ def val(params, save_dir=None, model=None, device=None, compute_loss=None, val_l
     depth_val = np.zeros(9)
     obj_val = 0
 
-    all_labels = []
     stats = []
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     for i, item in val_bar:
         img, smnt, depth, labels = item
-        all_labels += labels[:, 1].tolist()
         img = img.to(device, non_blocking=True)
         smnt = smnt.to(device)
         depth = depth.to(device)
